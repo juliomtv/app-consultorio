@@ -1,0 +1,513 @@
+/* ============================================================
+   ADMIN PANEL — Estilos específicos do painel administrativo
+   ============================================================ */
+
+/* ── SIDEBAR ADMIN ──────────────────────────────────────────── */
+.sidebar.admin-sidebar .sidebar-brand-icon {
+  background: linear-gradient(135deg, #1E1B4B, #4338CA);
+}
+
+.sidebar.admin-sidebar .nav-item.active {
+  background: #EEF2FF;
+  color: #4338CA;
+}
+
+/* ── DASHBOARD GRID ─────────────────────────────────────────── */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 1200px) { .dashboard-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 640px)  { .dashboard-grid { grid-template-columns: 1fr; } }
+
+/* ── CALENDAR / AGENDA ──────────────────────────────────────── */
+.calendar-wrapper {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.calendar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.calendar-nav {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.calendar-nav-btn {
+  width: 36px; height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--transition);
+  background: var(--surface);
+}
+
+.calendar-nav-btn:hover { background: var(--bg); color: var(--text-primary); }
+
+.calendar-title { font-weight: 700; font-size: 1rem; }
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--border);
+}
+
+.calendar-day-header {
+  background: var(--bg-2);
+  padding: .625rem;
+  text-align: center;
+  font-size: .75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  color: var(--text-muted);
+}
+
+.calendar-day {
+  background: var(--surface);
+  padding: .625rem;
+  min-height: 90px;
+  cursor: pointer;
+  transition: var(--transition);
+  position: relative;
+}
+
+.calendar-day:hover { background: var(--bg-2); }
+
+.calendar-day.today { background: var(--primary-bg); }
+.calendar-day.today .day-number { background: var(--primary); color: var(--white); border-radius: var(--radius-full); }
+.calendar-day.other-month { background: var(--bg-2); opacity: .5; }
+.calendar-day.selected { background: var(--primary-bg); border: 2px solid var(--primary); }
+
+.day-number {
+  width: 28px; height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.day-events { margin-top: .25rem; display: flex; flex-direction: column; gap: .15rem; }
+
+.day-event-dot {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  font-size: .7rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.day-event-dot::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+
+/* ── PROFISSIONAIS CARD ─────────────────────────────────────── */
+.professional-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  transition: var(--transition);
+}
+
+.professional-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
+
+.professional-info { flex: 1; }
+.professional-name { font-weight: 700; font-size: 1rem; margin-bottom: .25rem; }
+.professional-specialty { font-size: .875rem; color: var(--text-secondary); }
+.professional-council { font-size: .8rem; color: var(--text-muted); margin-top: .25rem; }
+
+.professional-actions { display: flex; gap: .5rem; }
+
+/* ── FINANCIAL ──────────────────────────────────────────────── */
+.financial-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (max-width: 768px) { .financial-summary { grid-template-columns: 1fr; } }
+
+.financial-card {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.financial-card .amount {
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+  margin: .5rem 0;
+}
+
+.financial-card.income .amount { color: var(--success); }
+.financial-card.expense .amount { color: var(--danger); }
+.financial-card.balance .amount { color: var(--primary); }
+
+.financial-label { font-size: .875rem; color: var(--text-muted); font-weight: 500; }
+
+/* ── FILTROS ─────────────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+  flex-wrap: wrap;
+  padding: 1rem 1.5rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.filter-label {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  white-space: nowrap;
+}
+
+/* ── APPOINTMENT LIST ───────────────────────────────────────── */
+.appt-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .875rem 1rem;
+  border-radius: var(--radius-md);
+  transition: var(--transition);
+  cursor: pointer;
+}
+
+.appt-item:hover { background: var(--bg-2); }
+
+.appt-time {
+  font-size: .9rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  min-width: 50px;
+  text-align: center;
+}
+
+.appt-info { flex: 1; min-width: 0; }
+.appt-patient { font-weight: 600; font-size: .9rem; color: var(--text-primary); }
+.appt-type { font-size: .8rem; color: var(--text-secondary); }
+
+.appt-divider {
+  width: 3px;
+  align-self: stretch;
+  border-radius: 4px;
+  background: var(--primary);
+  flex-shrink: 0;
+}
+
+.appt-divider.confirmed { background: var(--success); }
+.appt-divider.cancelled { background: var(--danger); }
+.appt-divider.completed { background: var(--text-muted); }
+
+/* ── PATIENT DETAIL ─────────────────────────────────────────── */
+.patient-header {
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  color: var(--white);
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.patient-header .avatar {
+  width: 80px; height: 80px;
+  font-size: 1.75rem;
+  border: 3px solid rgba(255,255,255,.3);
+}
+
+.patient-header-info h2 { color: var(--white); margin: 0; }
+.patient-header-info p { color: rgba(255,255,255,.8); margin: .25rem 0 0; }
+
+.patient-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.patient-meta-item {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  font-size: .875rem;
+  color: rgba(255,255,255,.85);
+}
+
+/* ── LOGS ───────────────────────────────────────────────────── */
+.log-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: .875rem 1rem;
+  border-bottom: 1px solid var(--border-light);
+  font-size: .875rem;
+}
+
+.log-item:last-child { border-bottom: none; }
+
+.log-icon {
+  width: 32px; height: 32px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: .875rem;
+  flex-shrink: 0;
+}
+
+.log-icon.success { background: var(--success-bg); color: var(--success); }
+.log-icon.error   { background: var(--danger-bg);  color: var(--danger); }
+.log-icon.warning { background: var(--warning-bg); color: var(--warning); }
+.log-icon.info    { background: var(--info-bg);    color: var(--info); }
+
+.log-action { font-weight: 600; color: var(--text-primary); }
+.log-details { color: var(--text-secondary); }
+.log-meta { margin-left: auto; text-align: right; white-space: nowrap; }
+.log-time { font-size: .75rem; color: var(--text-muted); }
+.log-ip   { font-size: .7rem; color: var(--text-muted); font-family: var(--font-mono); }
+
+/* ── UPLOAD ZONE ────────────────────────────────────────────── */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+  padding: 2.5rem;
+  text-align: center;
+  cursor: pointer;
+  transition: var(--transition);
+  background: var(--bg-2);
+}
+
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.upload-icon { font-size: 2.5rem; color: var(--text-muted); margin-bottom: .75rem; }
+.upload-text { font-weight: 500; color: var(--text-secondary); }
+.upload-hint { font-size: .8rem; color: var(--text-muted); margin-top: .375rem; }
+
+/* ── WHATSAPP BUTTON ────────────────────────────────────────── */
+.btn-whatsapp {
+  background: #25D366;
+  color: var(--white);
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+}
+
+.btn-whatsapp:hover { background: #1DA851; color: var(--white); }
+
+/* ── CHART PLACEHOLDER ──────────────────────────────────────── */
+.chart-container {
+  position: relative;
+  width: 100%;
+  height: 240px;
+}
+
+/* ── SETTINGS GRID ──────────────────────────────────────────── */
+.settings-section {
+  background: var(--surface);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+}
+
+.settings-section-header {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-2);
+}
+
+.settings-section-title {
+  font-weight: 700;
+  font-size: 1rem;
+  color: var(--text-primary);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.settings-row:last-child { border-bottom: none; }
+
+.settings-row-label { font-size: .9rem; font-weight: 500; color: var(--text-primary); }
+.settings-row-desc  { font-size: .8rem; color: var(--text-secondary); margin-top: .15rem; }
+
+/* ── LIBRARY ITEM CARD ──────────────────────────────────────── */
+.library-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: var(--transition);
+  display: flex;
+  flex-direction: column;
+}
+
+.library-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+
+.library-cover {
+  height: 140px;
+  background: linear-gradient(135deg, var(--primary-bg), var(--secondary-bg));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 3rem;
+  color: var(--primary);
+}
+
+.library-body { padding: 1rem; flex: 1; }
+.library-title { font-weight: 700; font-size: .9375rem; margin-bottom: .25rem; }
+.library-category { font-size: .75rem; color: var(--text-muted); }
+.library-desc { font-size: .8125rem; color: var(--text-secondary); margin-top: .5rem; }
+
+.library-footer {
+  padding: .75rem 1rem;
+  border-top: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ── QUICK ACTIONS ──────────────────────────────────────────── */
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: .75rem;
+}
+
+.quick-action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  padding: 1rem;
+  background: var(--bg-2);
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  color: var(--text-secondary);
+  font-size: .8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: center;
+  text-decoration: none;
+}
+
+.quick-action-btn:hover { border-color: var(--primary); background: var(--primary-bg); color: var(--primary); }
+.quick-action-btn .icon { font-size: 1.5rem; }
+
+/* ── SCHEDULE GRID ──────────────────────────────────────────── */
+.schedule-grid {
+  display: grid;
+  grid-template-columns: 60px repeat(7, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.schedule-time-col {
+  background: var(--bg-2);
+  font-size: .75rem;
+  color: var(--text-muted);
+  text-align: right;
+  padding: .25rem .5rem;
+  border-bottom: 1px solid var(--border-light);
+  font-weight: 500;
+}
+
+.schedule-day-header {
+  background: var(--primary-bg);
+  color: var(--primary);
+  font-weight: 700;
+  font-size: .8rem;
+  text-align: center;
+  padding: .625rem;
+  border-bottom: 1px solid var(--border);
+  border-left: 1px solid var(--border-light);
+}
+
+.schedule-cell {
+  border-bottom: 1px solid var(--border-light);
+  border-left: 1px solid var(--border-light);
+  min-height: 48px;
+  position: relative;
+  cursor: pointer;
+  transition: background .1s;
+}
+
+.schedule-cell:hover { background: var(--primary-bg); }
+
+.schedule-event {
+  position: absolute;
+  inset: 2px;
+  background: var(--primary);
+  border-radius: 4px;
+  padding: 2px 4px;
+  font-size: .7rem;
+  color: var(--white);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── RESPONSIVE ADMIN ───────────────────────────────────────── */
+@media (max-width: 1024px) {
+  .dashboard-grid { grid-template-columns: repeat(2, 1fr); }
+  .financial-summary { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 768px) {
+  .quick-actions { grid-template-columns: repeat(3, 1fr); }
+  .filter-bar { overflow-x: auto; }
+}
+
+@media (max-width: 480px) {
+  .quick-actions { grid-template-columns: repeat(2, 1fr); }
+}

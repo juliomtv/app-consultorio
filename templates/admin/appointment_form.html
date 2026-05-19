@@ -1,0 +1,259 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Nova Consulta{% endblock %}
+{% block page_title %}Agendar Consulta{% endblock %}
+
+{% block content %}
+<div style="max-width:760px;margin:0 auto">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📅 Nova consulta / procedimento</span>
+    </div>
+    <div class="card-body">
+      <form method="POST" id="apptForm">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+
+          <!-- Paciente -->
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Paciente <span class="required">*</span></label>
+            <input type="text" id="patientSearch" class="form-control"
+                   placeholder="Digite o nome ou CPF do paciente..." autocomplete="off">
+            <div id="patientResults" style="position:relative"></div>
+            <input type="hidden" name="patient_id" id="patientId" required>
+            <div id="patientSelected" style="display:none;margin-top:.5rem;padding:.5rem .75rem;
+                 background:var(--bg-secondary);border-radius:var(--radius);font-size:.875rem">
+              <span id="patientSelectedName"></span>
+              <button type="button" onclick="clearPatient()"
+                      style="float:right;background:none;border:none;cursor:pointer;color:var(--text-muted)">✕</button>
+            </div>
+            <span class="form-hint">Busca por nome ou CPF.</span>
+          </div>
+
+          <!-- Profissional -->
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Profissional <span class="required">*</span></label>
+            <select name="professional_id" class="form-control form-select" required id="profSelect">
+              <option value="">Selecionar profissional</option>
+              {% for prof in professionals %}
+              <option value="{{ prof.id }}"
+                {{ 'selected' if prefill_prof == prof.id|string }}>
+                {{ prof.user.name }} — {{ prof.specialty }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Data e Hora -->
+          <div class="form-group">
+            <label class="form-label">Data <span class="required">*</span></label>
+            <input type="date" name="date" id="apptDate" class="form-control" required
+                   value="{{ prefill_date }}">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Horário <span class="required">*</span></label>
+            <div class="d-flex gap-2">
+              <select name="time" id="apptTime" class="form-control form-select" required>
+                <option value="">Selecionar horário</option>
+                {% if prefill_time %}
+                <option value="{{ prefill_time }}" selected>{{ prefill_time }}</option>
+                {% endif %}
+              </select>
+              <button type="button" id="loadSlotsBtn" class="btn btn-outline-secondary btn-sm"
+                      style="white-space:nowrap" onclick="loadAdminSlots()">
+                Carregar horários
+              </button>
+            </div>
+            <span class="form-hint">Selecione o profissional e a data e clique em "Carregar horários".</span>
+          </div>
+
+          <!-- Tipo e Status -->
+          <div class="form-group">
+            <label class="form-label">Tipo <span class="required">*</span></label>
+            <select name="type" class="form-control form-select" required>
+              {% for t in ['Consulta','Retorno','Exame','Procedimento','Teleconsulta','Cirurgia','Avaliação'] %}
+              <option value="{{ t }}">{{ t }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Status inicial</label>
+            <select name="status" class="form-control form-select">
+              <option value="scheduled">Agendada</option>
+              <option value="confirmed">Confirmada</option>
+            </select>
+          </div>
+
+          <!-- Pagamento -->
+          <div class="form-group">
+            <label class="form-label">Forma de pagamento</label>
+            <select name="payment_type" id="paymentType" class="form-control form-select"
+                    onchange="togglePlan()">
+              <option value="particular">💳 Particular</option>
+              <option value="convenio">🏥 Convênio</option>
+              <option value="cortesia">🎁 Cortesia</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Valor (R$)</label>
+            <input type="number" name="price" id="priceField" class="form-control"
+                   step="0.01" min="0" value="0.00" placeholder="0.00">
+            <span class="form-hint">Deixe 0 para usar o valor padrão do plano.</span>
+          </div>
+
+          <!-- Plano (aparece só quando Convênio) -->
+          {% if plans %}
+          <div class="form-group" style="grid-column:1/-1" id="planRow" style="display:none">
+            <label class="form-label">Plano de saúde</label>
+            <select name="plan_id" id="planSelect" class="form-control form-select">
+              <option value="">Sem plano</option>
+              {% for p in plans %}
+              <option value="{{ p.id }}"
+                      data-value="{{ p.consultation_value }}">
+                {{ p.name }}{% if p.operator %} — {{ p.operator }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+          {% endif %}
+
+          <!-- Observações -->
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Observações (visível ao paciente)</label>
+            <textarea name="notes" class="form-control" rows="2"
+                      placeholder="Motivo da consulta, orientações..."></textarea>
+          </div>
+
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Anotações internas (só admin)</label>
+            <textarea name="internal_notes" class="form-control" rows="2"
+                      placeholder="Observações internas, não visíveis ao paciente..."></textarea>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3 mt-4">
+          <a href="{{ url_for('admin.schedule') }}" class="btn btn-outline-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-primary">Confirmar agendamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Busca de paciente ──────────────────────────────────────────────────────────
+let searchTimer;
+const patientSearch = document.getElementById('patientSearch');
+const patientResults = document.getElementById('patientResults');
+const patientId = document.getElementById('patientId');
+const patientSelected = document.getElementById('patientSelected');
+const patientSelectedName = document.getElementById('patientSelectedName');
+
+patientSearch.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  const q = patientSearch.value.trim();
+  if (q.length < 2) { patientResults.innerHTML = ''; return; }
+  searchTimer = setTimeout(() => searchPatients(q), 300);
+});
+
+async function searchPatients(q) {
+  try {
+    const res = await fetch(`/api/v1/admin/buscar-pacientes?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!data.data || !data.data.length) {
+      patientResults.innerHTML = '<div style="padding:.5rem;font-size:.875rem;color:var(--text-muted)">Nenhum paciente encontrado.</div>';
+      return;
+    }
+    patientResults.innerHTML = `
+      <div style="position:absolute;z-index:100;width:100%;background:var(--bg-card);
+                  border:1px solid var(--border);border-radius:var(--radius);
+                  box-shadow:var(--shadow-md);max-height:220px;overflow-y:auto">
+        ${data.data.map(p => `
+          <div onclick="selectPatient(${p.id}, '${p.name.replace(/'/g,"\\'")} — ${p.email}')"
+               style="padding:.625rem 1rem;cursor:pointer;font-size:.875rem;
+                      border-bottom:1px solid var(--border)"
+               onmouseover="this.style.background='var(--bg-secondary)'"
+               onmouseout="this.style.background=''">
+            <strong>${p.name}</strong>
+            <span style="color:var(--text-muted);margin-left:.5rem">${p.email}</span>
+          </div>`).join('')}
+      </div>`;
+  } catch (e) {}
+}
+
+function selectPatient(id, label) {
+  patientId.value = id;
+  patientSearch.style.display = 'none';
+  patientSelected.style.display = 'block';
+  patientSelectedName.textContent = label;
+  patientResults.innerHTML = '';
+}
+
+function clearPatient() {
+  patientId.value = '';
+  patientSearch.value = '';
+  patientSearch.style.display = '';
+  patientSelected.style.display = 'none';
+}
+
+// ── Carregar horários disponíveis ─────────────────────────────────────────────
+async function loadAdminSlots() {
+  const profId = document.getElementById('profSelect').value;
+  const dateVal = document.getElementById('apptDate').value;
+  const timeSelect = document.getElementById('apptTime');
+
+  if (!profId || !dateVal) {
+    alert('Selecione o profissional e a data primeiro.');
+    return;
+  }
+
+  const btn = document.getElementById('loadSlotsBtn');
+  btn.textContent = '...';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/v1/horarios-disponiveis?professional_id=${profId}&date=${dateVal}`);
+    const data = await res.json();
+
+    // Mantém opção atual se já havia uma
+    const current = timeSelect.value;
+    timeSelect.innerHTML = '<option value="">Selecionar horário</option>';
+
+    if (data.data && data.data.length) {
+      data.data.forEach(slot => {
+        const opt = document.createElement('option');
+        opt.value = slot;
+        opt.textContent = slot;
+        if (slot === current) opt.selected = true;
+        timeSelect.appendChild(opt);
+      });
+    } else {
+      timeSelect.innerHTML = '<option value="">Nenhum horário disponível</option>';
+    }
+  } catch (e) {
+    alert('Erro ao carregar horários.');
+  } finally {
+    btn.textContent = 'Carregar horários';
+    btn.disabled = false;
+  }
+}
+
+// ── Plano de saúde ────────────────────────────────────────────────────────────
+function togglePlan() {
+  const val = document.getElementById('paymentType').value;
+  const planRow = document.getElementById('planRow');
+  if (planRow) planRow.style.display = val === 'convenio' ? 'block' : 'none';
+}
+
+// Preenche valor automático ao selecionar plano
+document.getElementById('planSelect')?.addEventListener('change', function() {
+  const opt = this.options[this.selectedIndex];
+  const v = parseFloat(opt.dataset.value || 0);
+  if (v > 0) document.getElementById('priceField').value = v.toFixed(2);
+});
+
+// Estado inicial
+togglePlan();
+</script>
+{% endblock %}

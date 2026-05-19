@@ -1,0 +1,160 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Financeiro{% endblock %}
+{% block page_title %}Controle Financeiro{% endblock %}
+
+{% block content %}
+<!-- Resumo -->
+<div class="financial-summary">
+  <div class="financial-card income">
+    <div class="financial-label">💰 Receitas</div>
+    <div class="amount">R$ {{ '%.2f'|format(totals.income) }}</div>
+    <div style="font-size:.8rem;color:var(--text-muted)">Total recebido</div>
+  </div>
+  <div class="financial-card expense">
+    <div class="financial-label">💸 Despesas</div>
+    <div class="amount">R$ {{ '%.2f'|format(totals.expense) }}</div>
+    <div style="font-size:.8rem;color:var(--text-muted)">Total gasto</div>
+  </div>
+  <div class="financial-card balance">
+    <div class="financial-label">📊 Saldo</div>
+    <div class="amount" style="color:{{ 'var(--success)' if totals.balance >= 0 else 'var(--danger)' }}">
+      R$ {{ '%.2f'|format(totals.balance) }}
+    </div>
+    <div style="font-size:.8rem;color:var(--text-muted)">Balanço geral</div>
+  </div>
+</div>
+
+<!-- Filtros e nova transação -->
+<div class="d-flex items-center justify-between mb-4 flex-wrap gap-3">
+  <form method="GET" class="d-flex gap-2 flex-wrap items-center">
+    <select name="type" class="form-control form-select" style="width:auto">
+      <option value="all" {{ 'selected' if type_filter=='all' }}>Todos</option>
+      <option value="income" {{ 'selected' if type_filter=='income' }}>Receitas</option>
+      <option value="expense" {{ 'selected' if type_filter=='expense' }}>Despesas</option>
+    </select>
+    <input type="month" name="month" value="{{ month_filter }}" class="form-control" style="width:auto">
+    <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+  </form>
+  <button onclick="openModal('newTransactionModal')" class="btn btn-primary btn-sm">➕ Nova transação</button>
+</div>
+
+<!-- Tabela -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table">
+      <thead>
+        <tr><th>Tipo</th><th>Descrição</th><th>Categoria</th><th>Valor</th><th>Pagamento</th><th>Status</th><th>Data</th></tr>
+      </thead>
+      <tbody>
+        {% for t in transactions.items %}
+        <tr>
+          <td>
+            <span class="badge {{ 'badge-success' if t.type == 'income' else 'badge-danger' }}">
+              {{ '💰 Receita' if t.type == 'income' else '💸 Despesa' }}
+            </span>
+          </td>
+          <td>
+            <div style="font-weight:600;font-size:.875rem">{{ t.description }}</div>
+            {% if t.patient %}<div style="font-size:.8rem;color:var(--text-muted)">{{ t.patient.name }}</div>{% endif %}
+          </td>
+          <td style="font-size:.875rem;color:var(--text-secondary)">{{ t.category or '—' }}</td>
+          <td>
+            <span style="font-weight:700;color:{{ 'var(--success)' if t.type=='income' else 'var(--danger)' }}">
+              R$ {{ '%.2f'|format(t.amount) }}
+            </span>
+          </td>
+          <td style="font-size:.8125rem">{{ t.payment_method or '—' }}</td>
+          <td>
+            <span class="badge {{ 'badge-success' if t.status=='paid' else 'badge-warning' if t.status=='pending' else 'badge-danger' }}">
+              {{ {'paid':'Pago','pending':'Pendente','cancelled':'Cancelado'}.get(t.status,t.status) }}
+            </span>
+          </td>
+          <td style="font-size:.8125rem;color:var(--text-secondary)">{{ t.created_at.strftime('%d/%m/%Y') }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center" style="padding:3rem;color:var(--text-muted)">Nenhuma transação encontrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if transactions.pages > 1 %}
+  <div class="card-footer d-flex items-center justify-between">
+    <span style="font-size:.875rem;color:var(--text-secondary)">
+      Página {{ transactions.page }} de {{ transactions.pages }}
+    </span>
+    <ul class="pagination">
+      {% if transactions.has_prev %}
+      <li class="page-item"><a class="page-link" href="?type={{ type_filter }}&month={{ month_filter }}&page={{ transactions.prev_num }}">‹</a></li>
+      {% endif %}
+      {% if transactions.has_next %}
+      <li class="page-item"><a class="page-link" href="?type={{ type_filter }}&month={{ month_filter }}&page={{ transactions.next_num }}">›</a></li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+
+<!-- MODAL NOVA TRANSAÇÃO -->
+<div class="modal-overlay" id="newTransactionModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">💰 Nova transação</span>
+      <button class="modal-close" onclick="closeModal('newTransactionModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form method="POST" action="{{ url_for('admin.new_transaction') }}">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group">
+            <label class="form-label">Tipo <span class="required">*</span></label>
+            <select name="type" class="form-control form-select" required>
+              <option value="income">💰 Receita</option>
+              <option value="expense">💸 Despesa</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Valor (R$) <span class="required">*</span></label>
+            <input type="number" name="amount" step="0.01" min="0" class="form-control" required>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Descrição <span class="required">*</span></label>
+            <input type="text" name="description" class="form-control" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Categoria</label>
+            <input type="text" name="category" class="form-control" placeholder="Ex: Consulta, Aluguel">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Forma de pagamento</label>
+            <select name="payment_method" class="form-control form-select">
+              <option value="">Selecionar</option>
+              {% for pm in ['dinheiro','cartao_credito','cartao_debito','pix','transferencia','convenio'] %}
+              <option value="{{ pm }}">{{ pm.replace('_', ' ').title() }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-control form-select">
+              <option value="paid">Pago</option>
+              <option value="pending">Pendente</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Vencimento</label>
+            <input type="date" name="due_date" class="form-control">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Observações</label>
+            <textarea name="notes" class="form-control" rows="2"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer" style="padding-top:1.25rem">
+          <button type="button" class="btn btn-outline-secondary" onclick="closeModal('newTransactionModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Registrar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,146 @@
+{% extends "patient/base_patient.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Welcome Card -->
+<div class="welcome-card">
+  <div class="welcome-text">
+    <h2>Olá, {{ current_user.name.split()[0] }}! 👋</h2>
+    <p>Bem-vindo ao seu painel. Acompanhe suas consultas e documentos.</p>
+    <div style="margin-top:1rem;display:flex;gap:.75rem;flex-wrap:wrap">
+      <a href="{{ url_for('patient.schedule') }}" class="btn btn-sm" style="background:rgba(255,255,255,.2);color:white;border:1px solid rgba(255,255,255,.3)">
+        ➕ Agendar consulta
+      </a>
+      {% if current_user.whatsapp %}
+      <button onclick="openWhatsApp('{{ current_user.whatsapp }}', 'Olá, preciso de informações!')"
+              class="btn btn-sm" style="background:rgba(37,211,102,.3);color:white;border:1px solid rgba(37,211,102,.4)">
+        💬 WhatsApp
+      </button>
+      {% endif %}
+    </div>
+  </div>
+  <div class="welcome-icon">🏥</div>
+</div>
+
+<!-- Stats -->
+<div class="patient-stats">
+  <div class="stat-card">
+    <div class="stat-icon primary">📅</div>
+    <div class="stat-info">
+      <div class="stat-value">{{ total_appointments }}</div>
+      <div class="stat-label">Total de consultas</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon success">✓</div>
+    <div class="stat-info">
+      <div class="stat-value">{{ upcoming | length }}</div>
+      <div class="stat-label">Próximas consultas</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning">🔔</div>
+    <div class="stat-info">
+      <div class="stat-value">{{ unread_notifications }}</div>
+      <div class="stat-label">Notificações</div>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem" class="dashboard-main">
+
+  <!-- Próximas consultas -->
+  <div>
+    <div class="d-flex items-center justify-between mb-4">
+      <h3 style="margin:0">Próximas Consultas</h3>
+      <a href="{{ url_for('patient.appointments') }}" class="btn btn-ghost btn-sm">Ver todas →</a>
+    </div>
+
+    {% if upcoming %}
+      {% for appt in upcoming %}
+      <div class="next-appt-card">
+        <div class="next-appt-date-box">
+          <div class="next-appt-day">{{ appt.date.strftime('%d') }}</div>
+          <div class="next-appt-month">{{ appt.date.strftime('%b') }}</div>
+        </div>
+        <div class="next-appt-info">
+          <div class="next-appt-professional">
+            {{ appt.professional.user.name if appt.professional else 'Profissional' }}
+          </div>
+          <div class="next-appt-specialty">
+            {{ appt.professional.specialty if appt.professional else '' }} • {{ appt.type }}
+          </div>
+          <div class="next-appt-time">🕐 {{ appt.time }} • {{ appt.duration }}min</div>
+        </div>
+        <div class="next-appt-actions">
+          <span class="badge badge-{{ 'success' if appt.status == 'confirmed' else 'primary' }}">
+            {{ 'Confirmada' if appt.status == 'confirmed' else 'Agendada' }}
+          </span>
+          <button onclick="confirmCancel({{ appt.id }}, '{{ appt.date.strftime('%d/%m/%Y') }}')"
+                  class="btn btn-ghost btn-icon btn-sm" title="Cancelar" style="color:var(--danger)">
+            ✕
+          </button>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <div class="empty-state-icon">📅</div>
+        <h3>Nenhuma consulta agendada</h3>
+        <p>Você não tem consultas próximas marcadas.</p>
+        <a href="{{ url_for('patient.schedule') }}" class="btn btn-primary" style="margin-top:1rem">
+          Agendar agora
+        </a>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Coluna lateral -->
+  <div>
+    <!-- Acesso rápido -->
+    <div class="card mb-4">
+      <div class="card-header"><span class="card-title">⚡ Acesso Rápido</span></div>
+      <div class="card-body" style="padding:1rem">
+        <div style="display:flex;flex-direction:column;gap:.5rem">
+          <a href="{{ url_for('patient.contractions') }}" class="btn btn-outline w-full" style="justify-content:flex-start">⏱ Contador de Contrações</a>
+          <a href="{{ url_for('patient.birth_plan') }}" class="btn btn-outline w-full" style="justify-content:flex-start">👶 Plano de Parto</a>
+          <a href="{{ url_for('patient.library') }}" class="btn btn-outline w-full" style="justify-content:flex-start">📚 Biblioteca</a>
+          <a href="{{ url_for('patient.documents') }}" class="btn btn-outline w-full" style="justify-content:flex-start">📄 Documentos</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Documentos recentes -->
+    {% if recent_docs %}
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📄 Documentos Recentes</span>
+        <a href="{{ url_for('patient.documents') }}" class="btn btn-ghost btn-sm">Ver todos</a>
+      </div>
+      <div class="card-body" style="padding:.5rem">
+        {% for doc in recent_docs %}
+        <div class="d-flex items-center gap-3 p-3" style="border-bottom:1px solid var(--border-light)">
+          <div class="doc-icon {{ 'pdf' if doc.file_type == 'pdf' else 'image' if doc.file_type in ['jpg','jpeg','png'] else 'doc' }}">
+            {{ '📄' if doc.file_type == 'pdf' else '🖼' if doc.file_type in ['jpg','jpeg','png'] else '📝' }}
+          </div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:.875rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              {{ doc.original_name or doc.filename }}
+            </div>
+            <div style="font-size:.75rem;color:var(--text-muted)">{{ doc.created_at.strftime('%d/%m/%Y') }}</div>
+          </div>
+          <a href="{{ url_for('patient.view_document', doc_id=doc.id) }}" target="_blank"
+             class="btn btn-ghost btn-icon btn-sm">👁</a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<style>
+@media (max-width:768px) { .dashboard-main { grid-template-columns:1fr !important; } }
+</style>
+{% endblock %}

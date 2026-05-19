@@ -1,0 +1,140 @@
+{% extends "patient/base_patient.html" %}
+{% block title %}Contador de Contrações{% endblock %}
+{% block page_title %}Contador de Contrações{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="/static/css/patient.css">{% endblock %}
+
+{% block content %}
+<div style="max-width:760px;margin:0 auto">
+
+  <!-- Painel sem sessão ativa -->
+  <div id="noSessionPanel">
+    <div class="card mb-4">
+      <div class="card-body text-center" style="padding:3rem 2rem">
+        <div style="font-size:4rem;margin-bottom:1rem">⏱</div>
+        <h2>Contador de Contrações</h2>
+        <p style="max-width:400px;margin:.75rem auto 2rem;color:var(--text-secondary)">
+          Monitore as contrações do trabalho de parto com precisão. Registre duração e intervalo de cada contração.
+        </p>
+        <button id="startSessionBtn" class="btn btn-primary btn-lg">
+          Iniciar nova sessão
+        </button>
+      </div>
+    </div>
+
+    <!-- Sessões anteriores -->
+    {% if sessions %}
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 Sessões anteriores</span></div>
+      <div class="card-body" style="padding:0">
+        {% for s in sessions %}
+        <div style="padding:1rem 1.25rem;border-bottom:1px solid var(--border-light);display:flex;align-items:center;gap:1rem">
+          <div style="width:44px;height:44px;border-radius:var(--radius-md);background:var(--primary-bg);color:var(--primary);display:flex;align-items:center;justify-content:center;font-size:1.25rem;flex-shrink:0">
+            ⏱
+          </div>
+          <div style="flex:1">
+            <div style="font-weight:600;font-size:.9375rem">{{ s.started_at.strftime('%d/%m/%Y às %H:%M') }}</div>
+            <div style="font-size:.8125rem;color:var(--text-secondary)">
+              {{ s.total_contractions }} contrações
+              {% if s.avg_duration %} · Média: {{ '%.0f'|format(s.avg_duration) }}s{% endif %}
+              {% if s.avg_interval %} · Intervalo: {{ '%.0f'|format(s.avg_interval / 60) }}min{% endif %}
+            </div>
+          </div>
+          <span class="badge badge-{{ 'muted' if s.ended_at else 'warning' }}">
+            {{ 'Encerrada' if s.ended_at else 'Em andamento' }}
+          </span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Painel com sessão ativa -->
+  <div id="sessionPanel" style="display:none">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+      <div class="card" style="text-align:center;padding:1rem">
+        <div style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Sessão em andamento</div>
+        <div id="sessionElapsed" style="font-size:1.5rem;font-weight:800;color:var(--primary);margin-top:.25rem;font-variant-numeric:tabular-nums">00:00</div>
+      </div>
+      <div class="card" style="display:flex;align-items:center;justify-content:center;gap:.75rem;padding:1rem">
+        <button id="endSessionBtn" class="btn btn-danger btn-sm">⏹ Encerrar sessão</button>
+      </div>
+    </div>
+
+    <!-- Display principal -->
+    <div class="card mb-4">
+      <div class="card-body contraction-display">
+        <div id="mainTimer" class="contraction-timer">00:00</div>
+        <div id="timerLabel" class="contraction-label">Aguardando</div>
+
+        <button id="contractionBtn" class="contraction-btn idle">
+          <span class="btn-icon-text">▶</span>
+          <span class="btn-label">CONTRAÇÃO</span>
+        </button>
+
+        <div id="statusText" style="font-size:.9rem;color:var(--text-secondary)">
+          Pressione o botão quando sentir uma contração.
+        </div>
+
+        <div class="contraction-stats">
+          <div class="contraction-stat">
+            <div class="contraction-stat-value" id="contractionCount">0</div>
+            <div class="contraction-stat-label">Contrações</div>
+          </div>
+          <div class="contraction-stat">
+            <div class="contraction-stat-value" id="avgDuration">--:--</div>
+            <div class="contraction-stat-label">Duração média</div>
+          </div>
+          <div class="contraction-stat">
+            <div class="contraction-stat-value" id="avgInterval">--:--</div>
+            <div class="contraction-stat-label">Intervalo médio</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Histórico da sessão -->
+    <div class="card">
+      <div class="card-header"><span class="card-title">📋 Contrações desta sessão</span></div>
+      <div class="card-body" style="padding:0">
+        <div id="contractionHistory" class="contraction-history">
+          <div style="padding:2rem;text-align:center;color:var(--text-muted);font-size:.875rem">
+            Nenhuma contração registrada ainda.
+          </div>
+        </div>
+      </div>
+      <div class="card-footer">
+        <div class="form-group" style="margin:0">
+          <textarea id="sessionNotes" class="form-control" rows="2"
+                    placeholder="Observações para a sessão (visível para o médico)..."></textarea>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guia rápido -->
+  <div class="card mt-4">
+    <div class="card-header"><span class="card-title">💡 Como usar</span></div>
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:1rem">
+        {% for step, icon, text in [
+          ('1', '▶', 'Pressione ao INÍCIO da contração'),
+          ('2', '⏸', 'Pressione ao FIM da contração'),
+          ('3', '📊', 'Acompanhe duração e intervalo'),
+          ('4', '⚠', 'Intervalo ≤5min: contate o médico')
+        ] %}
+        <div style="text-align:center;padding:.75rem">
+          <div style="width:36px;height:36px;background:var(--primary-bg);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-weight:800;color:var(--primary);margin-bottom:.5rem">{{ step }}</div>
+          <div style="font-size:.8125rem;color:var(--text-secondary)">{{ text }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="/static/js/contractions.js"></script>
+{% endblock %}

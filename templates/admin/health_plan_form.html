@@ -1,0 +1,63 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ 'Editar' if plan else 'Novo' }} Plano{% endblock %}
+{% block page_title %}{{ 'Editar' if plan else 'Novo' }} Plano de Saúde{% endblock %}
+
+{% block content %}
+<div style="max-width:640px;margin:0 auto">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🏥 {{ 'Editar plano' if plan else 'Cadastrar plano' }}</span>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Nome do plano <span class="required">*</span></label>
+            <input type="text" name="name" class="form-control" required
+                   value="{{ plan.name if plan else '' }}"
+                   placeholder="Ex: Unimed Nacional, Bradesco Saúde Flex">
+          </div>
+
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Operadora</label>
+            <input type="text" name="operator" class="form-control"
+                   value="{{ plan.operator or '' if plan else '' }}"
+                   placeholder="Ex: Unimed, Bradesco, SulAmérica, Amil">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Código ANS</label>
+            <input type="text" name="ans_code" class="form-control"
+                   value="{{ plan.ans_code or '' if plan else '' }}"
+                   placeholder="Ex: 305701">
+            <span class="form-hint">Registro da operadora na ANS.</span>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Valor padrão da consulta (R$)</label>
+            <input type="number" name="consultation_value" class="form-control"
+                   step="0.01" min="0"
+                   value="{{ '%.2f'|format(plan.consultation_value) if plan else '0.00' }}"
+                   placeholder="0.00">
+            <span class="form-hint">Valor que o plano repassa por consulta.</span>
+          </div>
+
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Observações</label>
+            <textarea name="notes" class="form-control" rows="3"
+                      placeholder="Regras de cobertura, contatos, procedimentos aceitos...">{{ plan.notes or '' if plan else '' }}</textarea>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3 mt-4">
+          <a href="{{ url_for('admin.health_plans') }}" class="btn btn-outline-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-primary">
+            {{ 'Salvar alterações' if plan else 'Cadastrar plano' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

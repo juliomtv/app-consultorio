@@ -1,0 +1,152 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+
+{% block content %}
+<!-- Stats Grid -->
+<div class="dashboard-grid">
+  <div class="stat-card">
+    <div class="stat-icon primary">👥</div>
+    <div class="stat-info">
+      <div class="stat-value">{{ stats.total_patients }}</div>
+      <div class="stat-label">Total de pacientes</div>
+      <div class="stat-change up">▲ {{ stats.new_patients_month }} este mês</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon success">📅</div>
+    <div class="stat-info">
+      <div class="stat-value">{{ stats.today_appointments }}</div>
+      <div class="stat-label">Consultas hoje</div>
+      <div class="stat-change up">{{ stats.month_appointments }} no mês</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning">⏳</div>
+    <div class="stat-info">
+      <div class="stat-value">{{ stats.pending_appointments }}</div>
+      <div class="stat-label">Aguardando confirmação</div>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon secondary">💰</div>
+    <div class="stat-info">
+      <div class="stat-value">R$ {{ '%.2f'|format(stats.month_revenue) }}</div>
+      <div class="stat-label">Receita do mês</div>
+    </div>
+  </div>
+</div>
+
+<div style="display:grid;grid-template-columns:2fr 1fr;gap:1.5rem">
+
+  <!-- Gráfico mensal + consultas de hoje -->
+  <div>
+    <!-- Gráfico -->
+    <div class="card mb-4">
+      <div class="card-header">
+        <span class="card-title">📈 Consultas por mês</span>
+        <span style="font-size:.8rem;color:var(--text-muted)">Últimos 6 meses</span>
+      </div>
+      <div class="card-body">
+        <canvas id="monthlyChart" style="width:100%;height:220px"></canvas>
+      </div>
+    </div>
+
+    <!-- Consultas de hoje -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">📅 Agenda de hoje</span>
+        <a href="{{ url_for('admin.schedule') }}" class="btn btn-ghost btn-sm">Ver todas →</a>
+      </div>
+      {% if today_appts %}
+      <div class="card-body" style="padding:0">
+        {% for appt in today_appts %}
+        <div class="appt-item">
+          <div class="appt-divider {{ appt.status }}"></div>
+          <div class="appt-time">{{ appt.time }}</div>
+          <div class="appt-info">
+            <div class="appt-patient">{{ appt.patient.name if appt.patient else '—' }}</div>
+            <div class="appt-type">
+              {{ appt.type }} · {{ appt.professional.user.name if appt.professional else '—' }}
+            </div>
+          </div>
+          <span class="badge badge-{{ 'success' if appt.status=='confirmed' else 'primary' if appt.status=='scheduled' else 'muted' }}">
+            {{ {'scheduled':'Agendada','confirmed':'Confirmada','completed':'Concluída','cancelled':'Cancelada','no_show':'Ausente'}.get(appt.status,appt.status) }}
+          </span>
+          <button onclick="changeAppointmentStatus({{ appt.id }}, '{{ appt.status }}')"
+                  class="btn btn-ghost btn-icon btn-sm" title="Alterar status">✏</button>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div class="empty-state" style="padding:2rem">
+        <div class="empty-state-icon">📅</div>
+        <h3>Sem consultas hoje</h3>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Coluna lateral -->
+  <div>
+    <!-- Acões rápidas -->
+    <div class="card mb-4">
+      <div class="card-header"><span class="card-title">⚡ Ações rápidas</span></div>
+      <div class="card-body" style="padding:1rem">
+        <div class="quick-actions">
+          <a href="{{ url_for('admin.new_patient') }}" class="quick-action-btn">
+            <span class="icon">👤</span> Novo paciente
+          </a>
+          <a href="{{ url_for('admin.new_professional') }}" class="quick-action-btn">
+            <span class="icon">🩺</span> Novo profissional
+          </a>
+          <a href="{{ url_for('admin.schedule') }}" class="quick-action-btn">
+            <span class="icon">📅</span> Consultas
+          </a>
+          <a href="{{ url_for('admin.financial') }}" class="quick-action-btn">
+            <span class="icon">💰</span> Financeiro
+          </a>
+          <a href="{{ url_for('admin.library') }}" class="quick-action-btn">
+            <span class="icon">📚</span> Biblioteca
+          </a>
+          <a href="{{ url_for('admin.logs') }}" class="quick-action-btn">
+            <span class="icon">📋</span> Logs
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Pacientes recentes -->
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">👥 Pacientes recentes</span>
+        <a href="{{ url_for('admin.patients') }}" class="btn btn-ghost btn-sm">Ver todos</a>
+      </div>
+      <div class="card-body" style="padding:0">
+        {% for patient in recent_patients %}
+        <a href="{{ url_for('admin.patient_detail', patient_id=patient.id) }}"
+           style="display:flex;align-items:center;gap:.875rem;padding:.875rem 1rem;border-bottom:1px solid var(--border-light);text-decoration:none;transition:background .15s"
+           onmouseover="this.style.background='var(--bg-2)'" onmouseout="this.style.background=''">
+          <div class="avatar avatar-sm">{{ patient.name[:2]|upper }}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:.875rem;color:var(--text-primary)">{{ patient.name }}</div>
+            <div style="font-size:.75rem;color:var(--text-muted)">{{ patient.created_at.strftime('%d/%m/%Y') }}</div>
+          </div>
+        </a>
+        {% else %}
+        <div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:.875rem">
+          Nenhum paciente cadastrado.
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.CHART_DATA = {
+    labels: {{ monthly_data | map(attribute='month') | list | tojson }},
+    values: {{ monthly_data | map(attribute='count') | list | tojson }},
+  };
+</script>
+{% endblock %}

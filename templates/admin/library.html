@@ -1,0 +1,106 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Biblioteca{% endblock %}
+{% block page_title %}Biblioteca de Materiais{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-end mb-4">
+  <button onclick="openModal('uploadLibraryModal')" class="btn btn-primary">⬆ Adicionar material</button>
+</div>
+
+{% if items %}
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:1.25rem">
+  {% for item in items %}
+  <div class="library-card">
+    <div class="library-cover">📄</div>
+    <div class="library-body">
+      <div class="library-title">{{ item.title }}</div>
+      <div class="library-category">{{ item.category }}</div>
+      {% if item.description %}
+      <div class="library-desc">{{ item.description[:120] }}{% if item.description|length > 120 %}...{% endif %}</div>
+      {% endif %}
+      {% if item.tags %}
+      <div style="margin-top:.5rem;display:flex;flex-wrap:wrap;gap:.25rem">
+        {% for tag in item.tags.split(',') %}
+        <span class="badge badge-muted">{{ tag.strip() }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </div>
+    <div class="library-footer">
+      <div>
+        <span style="font-size:.75rem;color:var(--text-muted)">⬇ {{ item.download_count }}</span>
+        <span class="badge {{ 'badge-success' if item.is_public else 'badge-muted' }}" style="margin-left:.5rem">
+          {{ 'Público' if item.is_public else 'Privado' }}
+        </span>
+      </div>
+      <div class="d-flex gap-1">
+        <a href="{{ url_for('admin.serve_library_file', item_id=item.id) }}" target="_blank"
+           class="btn btn-ghost btn-icon btn-sm" title="Visualizar">👁</a>
+        <form method="POST" action="{{ url_for('admin.delete_library_item', item_id=item.id) }}" style="display:inline">
+          <button type="submit" class="btn btn-ghost btn-icon btn-sm" style="color:var(--danger)"
+                  onclick="return confirm('Excluir este material?')" title="Excluir">🗑</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">📚</div>
+  <h3>Biblioteca vazia</h3>
+  <p>Adicione PDFs e materiais educativos para seus pacientes.</p>
+  <button onclick="openModal('uploadLibraryModal')" class="btn btn-primary" style="margin-top:1rem">
+    Adicionar primeiro material
+  </button>
+</div>
+{% endif %}
+
+<!-- MODAL UPLOAD -->
+<div class="modal-overlay" id="uploadLibraryModal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">📄 Adicionar material</span>
+      <button class="modal-close" onclick="closeModal('uploadLibraryModal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <form method="POST" action="{{ url_for('admin.upload_library_item') }}" enctype="multipart/form-data">
+        <div class="upload-zone" id="adminUploadZone" style="margin-bottom:1.25rem">
+          <div class="upload-icon">📄</div>
+          <div class="upload-text" id="adminUploadName">Clique para selecionar PDF ou EPUB</div>
+          <div class="upload-hint">Máx. 50MB</div>
+          <input type="file" id="adminFileInput" name="file" accept=".pdf,.epub" style="display:none" required>
+        </div>
+
+        <div class="form-group mb-3">
+          <label class="form-label">Título <span class="required">*</span></label>
+          <input type="text" name="title" class="form-control" required placeholder="Título do material">
+        </div>
+        <div class="form-group mb-3">
+          <label class="form-label">Descrição</label>
+          <textarea name="description" class="form-control" rows="2"></textarea>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem">
+          <div class="form-group">
+            <label class="form-label">Categoria</label>
+            <input type="text" name="category" class="form-control" value="Geral" placeholder="Ex: Nutrição, Pré-natal">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tags</label>
+            <input type="text" name="tags" class="form-control" placeholder="tag1, tag2, tag3">
+          </div>
+        </div>
+        <div class="form-check mb-4">
+          <input type="checkbox" name="is_public" id="isPublic" checked>
+          <label for="isPublic">Visível para os pacientes</label>
+        </div>
+
+        <div class="modal-footer" style="padding:0;border:none">
+          <button type="button" class="btn btn-outline-secondary" onclick="closeModal('uploadLibraryModal')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Adicionar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Página não encontrada — Consultório</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/main.css">
+  <style>
+    body { min-height:100vh; background:var(--bg); display:flex; align-items:center; justify-content:center; padding:2rem; }
+    .error-page { text-align:center; max-width:480px; }
+    .error-code { font-size:6rem; font-weight:800; color:var(--primary); line-height:1; margin-bottom:.5rem; }
+    .error-title { font-size:1.5rem; font-weight:700; margin-bottom:.75rem; }
+    .error-desc { color:var(--text-secondary); margin-bottom:2rem; }
+  </style>
+</head>
+<body>
+<div class="error-page animate-fade-in">
+  <div style="font-size:5rem;margin-bottom:1rem">🔍</div>
+  <div class="error-code">404</div>
+  <h1 class="error-title">Página não encontrada</h1>
+  <p class="error-desc">A página que você procura não existe ou foi removida.</p>
+  <div class="d-flex gap-3 justify-center">
+    <button onclick="history.back()" class="btn btn-outline-secondary">← Voltar</button>
+    <a href="/" class="btn btn-primary">🏠 Ir para o início</a>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,189 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Agenda{% endblock %}
+{% block page_title %}Agenda{% endblock %}
+
+{% block content %}
+<!-- Barra de navegação de data -->
+<div class="d-flex items-center justify-between mb-4 flex-wrap gap-3">
+  <div class="d-flex items-center gap-3">
+    <button id="agendaPrevDay" class="btn btn-outline-secondary btn-icon" title="Dia anterior">‹</button>
+    <div id="agendaDateLabel" style="font-weight:700;font-size:1rem;min-width:220px;text-align:center">
+      {{ selected_date.strftime('%A, %d de %B de %Y') }}
+    </div>
+    <button id="agendaNextDay" class="btn btn-outline-secondary btn-icon" title="Próximo dia">›</button>
+    <button id="agendaToday" class="btn btn-outline btn-sm">Hoje</button>
+    <input type="date" id="agendaDatePicker" class="form-control" style="width:auto"
+           value="{{ selected_date.isoformat() }}">
+  </div>
+  <a href="{{ url_for('admin.new_appointment', date=selected_date.isoformat()) }}"
+     class="btn btn-primary btn-sm">+ Nova consulta</a>
+  <select id="professionalFilter" class="form-control form-select" style="width:auto">
+    <option value="all" {{ 'selected' if professional_filter == 'all' }}>Todos os profissionais</option>
+    {% for prof in professionals %}
+    <option value="{{ prof.id }}" {{ 'selected' if professional_filter == prof.id|string }}>
+      {{ prof.user.name }}
+    </option>
+    {% endfor %}
+  </select>
+</div>
+
+<!-- Resumo do dia -->
+{% set total_day = appts_by_prof.values() | sum(start=[]) | list | length %}
+<div class="d-flex gap-3 mb-4 flex-wrap">
+  <div class="card" style="padding:.75rem 1.25rem;flex:1;min-width:140px">
+    <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Total do dia</div>
+    <div style="font-size:1.5rem;font-weight:700;color:var(--primary)">{{ total_day }}</div>
+  </div>
+  <div class="card" style="padding:.75rem 1.25rem;flex:1;min-width:140px">
+    <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Agendadas</div>
+    <div style="font-size:1.5rem;font-weight:700;color:var(--primary)">
+      {{ appts_by_prof.values() | sum(start=[]) | selectattr('status','eq','scheduled') | list | length }}
+    </div>
+  </div>
+  <div class="card" style="padding:.75rem 1.25rem;flex:1;min-width:140px">
+    <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Confirmadas</div>
+    <div style="font-size:1.5rem;font-weight:700;color:#10b981">
+      {{ appts_by_prof.values() | sum(start=[]) | selectattr('status','eq','confirmed') | list | length }}
+    </div>
+  </div>
+  <div class="card" style="padding:.75rem 1.25rem;flex:1;min-width:140px">
+    <div style="font-size:.75rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Canceladas</div>
+    <div style="font-size:1.5rem;font-weight:700;color:var(--danger)">
+      {{ appts_by_prof.values() | sum(start=[]) | selectattr('status','eq','cancelled') | list | length }}
+    </div>
+  </div>
+</div>
+
+{% if not professionals %}
+<div class="empty-state">
+  <div class="empty-state-icon">🩺</div>
+  <h3>Nenhum profissional cadastrado</h3>
+  <a href="{{ url_for('admin.new_professional') }}" class="btn btn-primary" style="margin-top:1rem">Cadastrar profissional</a>
+</div>
+{% else %}
+
+{% for prof in professionals %}
+{% if professional_filter == 'all' or professional_filter == prof.id|string %}
+{% set prof_appts = appts_by_prof.get(prof.id, []) %}
+<div class="card mt-3">
+  <div class="card-header" style="display:flex;align-items:center;justify-content:space-between">
+    <span class="card-title" style="display:flex;align-items:center;gap:.625rem">
+      <span class="avatar avatar-sm">{{ prof.user.name[:2]|upper }}</span>
+      {{ prof.user.name }}
+      <span style="font-size:.875rem;color:var(--text-secondary);font-weight:400">— {{ prof.specialty }}</span>
+    </span>
+    <span class="badge {{ 'badge-primary' if prof_appts else 'badge-muted' }}">
+      {{ prof_appts | length }} consulta{{ 's' if prof_appts | length != 1 }}
+    </span>
+  </div>
+
+  {% if prof_appts %}
+  <div class="table-wrapper">
+    <table class="table" style="margin:0">
+      <thead>
+        <tr>
+          <th style="width:80px">Horário</th>
+          <th>Paciente</th>
+          <th>Tipo</th>
+          <th>Pagamento</th>
+          <th>Status</th>
+          <th>Observações</th>
+          <th style="width:80px">Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for appt in prof_appts %}
+        <tr>
+          <td style="font-weight:700;font-size:1rem">{{ appt.time }}</td>
+          <td>
+            <a href="{{ url_for('admin.patient_detail', patient_id=appt.patient_id) }}"
+               style="font-weight:600;color:var(--text-primary)">
+              {{ appt.patient.name if appt.patient else '—' }}
+            </a>
+            {% if appt.patient and appt.patient.phone %}
+            <div style="font-size:.75rem;color:var(--text-muted)">{{ appt.patient.phone }}</div>
+            {% endif %}
+          </td>
+          <td style="font-size:.875rem">{{ appt.type }}</td>
+          <td style="font-size:.8rem">
+            {% if appt.payment_type == 'convenio' and appt.plan %}
+              <span class="badge badge-primary">🏥 {{ appt.plan.name }}</span>
+            {% elif appt.payment_type == 'cortesia' %}
+              <span class="badge badge-muted">🎁 Cortesia</span>
+            {% else %}
+              <span class="badge badge-muted">💳 Particular</span>
+            {% endif %}
+            {% if appt.price %}<div style="margin-top:.2rem;color:var(--text-muted)">R$ {{ '%.2f'|format(appt.price) }}</div>{% endif %}
+          </td>
+          <td>
+            <span class="badge {{ 'badge-success' if appt.status=='confirmed' else 'badge-primary' if appt.status=='scheduled' else 'badge-danger' if appt.status=='cancelled' else 'badge-muted' }}">
+              {{ {'scheduled':'Agendada','confirmed':'Confirmada','cancelled':'Cancelada','completed':'Concluída','no_show':'Ausente'}.get(appt.status, appt.status) }}
+            </span>
+          </td>
+          <td style="font-size:.8rem;color:var(--text-secondary);max-width:200px">
+            {{ appt.notes[:80] if appt.notes else '—' }}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <button onclick="changeAppointmentStatus({{ appt.id }}, '{{ appt.status }}')"
+                      class="btn btn-ghost btn-icon btn-sm" title="Alterar status">✏</button>
+              {% if appt.patient and appt.patient.whatsapp %}
+              <button onclick="openWhatsApp('{{ appt.patient.whatsapp }}')"
+                      class="btn btn-ghost btn-icon btn-sm" style="color:#25D366" title="WhatsApp">💬</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="card-body" style="padding:1.5rem;text-align:center;color:var(--text-muted);font-size:.875rem">
+    Nenhuma consulta agendada para este dia.
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endfor %}
+{% endif %}
+
+<input type="hidden" id="agendaCurrentDate" value="{{ selected_date.isoformat() }}">
+
+<script>
+(function() {
+  const currentDateInput = document.getElementById('agendaCurrentDate');
+  const datePicker = document.getElementById('agendaDatePicker');
+  const profFilter = document.getElementById('professionalFilter');
+
+  function goToDate(dateStr) {
+    const profVal = profFilter.value;
+    const params = new URLSearchParams({ date: dateStr });
+    if (profVal !== 'all') params.set('professional_id', profVal);
+    window.location.href = '{{ url_for("admin.schedule") }}?' + params.toString();
+  }
+
+  function shiftDate(days) {
+    const d = new Date(currentDateInput.value + 'T00:00:00');
+    d.setDate(d.getDate() + days);
+    goToDate(d.toISOString().split('T')[0]);
+  }
+
+  document.getElementById('agendaPrevDay').addEventListener('click', () => shiftDate(-1));
+  document.getElementById('agendaNextDay').addEventListener('click', () => shiftDate(1));
+  document.getElementById('agendaToday').addEventListener('click', () => {
+    goToDate(new Date().toISOString().split('T')[0]);
+  });
+
+  datePicker.addEventListener('change', () => goToDate(datePicker.value));
+  profFilter.addEventListener('change', () => goToDate(currentDateInput.value));
+
+  function openWhatsApp(phone) {
+    const digits = phone.replace(/\D/g, '');
+    const number = digits.startsWith('55') ? digits : '55' + digits;
+    window.open('https://wa.me/' + number, '_blank');
+  }
+  window.openWhatsApp = openWhatsApp;
+})();
+</script>
+{% endblock %}

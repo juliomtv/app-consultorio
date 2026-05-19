@@ -1,0 +1,143 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ 'Editar' if guide else 'Nova' }} Guia{% endblock %}
+{% block page_title %}{{ 'Editar' if guide else 'Nova' }} Guia de Plano{% endblock %}
+
+{% block content %}
+<div style="max-width:760px;margin:0 auto">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📋 {{ 'Editar guia' if guide else 'Cadastrar guia' }}</span>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+
+          <!-- Paciente e Plano -->
+          <div class="form-group">
+            <label class="form-label">Paciente <span class="required">*</span></label>
+            <select name="patient_id" class="form-control form-select" required
+                    {{ 'disabled' if guide }}>
+              <option value="">Selecionar paciente</option>
+              {% for pat in patients %}
+              <option value="{{ pat.id }}"
+                {{ 'selected' if guide and guide.patient_id == pat.id else
+                   'selected' if not guide and request.args.get('patient_id','') == pat.id|string }}>
+                {{ pat.name }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Plano <span class="required">*</span></label>
+            <select name="plan_id" class="form-control form-select" required>
+              <option value="">Selecionar plano</option>
+              {% for p in plans %}
+              <option value="{{ p.id }}" {{ 'selected' if guide and guide.plan_id == p.id }}>
+                {{ p.name }}{% if p.operator %} — {{ p.operator }}{% endif %}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- Guia e Autorização -->
+          <div class="form-group">
+            <label class="form-label">Número da guia</label>
+            <input type="text" name="guide_number" class="form-control"
+                   value="{{ guide.guide_number or '' if guide else '' }}"
+                   placeholder="Ex: 1234567890">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Código de autorização</label>
+            <input type="text" name="authorization_code" class="form-control"
+                   value="{{ guide.authorization_code or '' if guide else '' }}"
+                   placeholder="Ex: 987654321">
+          </div>
+
+          <!-- Procedimento -->
+          <div class="form-group">
+            <label class="form-label">Código TUSS / CBHPM</label>
+            <input type="text" name="procedure_code" class="form-control"
+                   value="{{ guide.procedure_code or '' if guide else '' }}"
+                   placeholder="Ex: 10101012">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Nome do procedimento</label>
+            <input type="text" name="procedure_name" class="form-control"
+                   value="{{ guide.procedure_name or '' if guide else '' }}"
+                   placeholder="Ex: Consulta em Ginecologia">
+          </div>
+
+          <!-- Valores -->
+          <div class="form-group">
+            <label class="form-label">Valor solicitado (R$)</label>
+            <input type="number" name="requested_value" class="form-control"
+                   step="0.01" min="0"
+                   value="{{ '%.2f'|format(guide.requested_value) if guide else '0.00' }}">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Valor autorizado (R$)</label>
+            <input type="number" name="authorized_value" class="form-control"
+                   step="0.01" min="0"
+                   value="{{ '%.2f'|format(guide.authorized_value) if guide else '0.00' }}">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Valor pago (R$)</label>
+            <input type="number" name="paid_value" class="form-control"
+                   step="0.01" min="0"
+                   value="{{ '%.2f'|format(guide.paid_value) if guide else '0.00' }}">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label">Validade da guia</label>
+            <input type="date" name="expiry_date" class="form-control"
+                   value="{{ guide.expiry_date.isoformat() if guide and guide.expiry_date else '' }}">
+          </div>
+
+          <!-- Status -->
+          <div class="form-group">
+            <label class="form-label">Status</label>
+            <select name="status" class="form-control form-select">
+              {% for val, label in [('pending','Pendente'),('authorized','Autorizada'),
+                                    ('submitted','Enviada'),('paid','Paga'),
+                                    ('denied','Negada'),('cancelled','Cancelada')] %}
+              <option value="{{ val }}" {{ 'selected' if guide and guide.status == val else
+                                           'selected' if not guide and val == 'pending' }}>
+                {{ label }}
+              </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <!-- ID da consulta (oculto / preenchido automaticamente) -->
+          <div class="form-group">
+            <label class="form-label">Consulta vinculada (ID)</label>
+            <input type="number" name="appointment_id" class="form-control"
+                   value="{{ guide.appointment_id or prefill_appt_id or '' }}"
+                   placeholder="Opcional — ID da consulta">
+            <span class="form-hint">Deixe em branco para criar a guia sem vínculo de consulta.</span>
+          </div>
+
+          <!-- Observações -->
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Observações</label>
+            <textarea name="notes" class="form-control" rows="3"
+                      placeholder="Informações adicionais, pendências, contatos do plano...">{{ guide.notes or '' if guide else '' }}</textarea>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3 mt-4">
+          <a href="{{ url_for('admin.insurance_guides') }}" class="btn btn-outline-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-primary">
+            {{ 'Salvar alterações' if guide else 'Cadastrar guia' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

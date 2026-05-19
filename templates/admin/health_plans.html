@@ -1,0 +1,73 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Planos de Saúde{% endblock %}
+{% block page_title %}Planos de Saúde{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-end mb-4">
+  <a href="{{ url_for('admin.new_health_plan') }}" class="btn btn-primary">+ Novo plano</a>
+</div>
+
+{% if plans %}
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Plano / Operadora</th>
+          <th>Código ANS</th>
+          <th>Valor padrão consulta</th>
+          <th>Consultas vinculadas</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for plan in plans %}
+        <tr>
+          <td>
+            <div style="font-weight:600">{{ plan.name }}</div>
+            {% if plan.operator %}
+            <div style="font-size:.8rem;color:var(--text-muted)">{{ plan.operator }}</div>
+            {% endif %}
+          </td>
+          <td style="font-size:.875rem">{{ plan.ans_code or '—' }}</td>
+          <td style="font-size:.875rem">
+            {% if plan.consultation_value %}
+              R$ {{ '%.2f'|format(plan.consultation_value) }}
+            {% else %}—{% endif %}
+          </td>
+          <td style="font-size:.875rem">{{ plan.appointments.count() }}</td>
+          <td>
+            <span class="badge {{ 'badge-success' if plan.is_active else 'badge-muted' }}">
+              {{ 'Ativo' if plan.is_active else 'Inativo' }}
+            </span>
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <a href="{{ url_for('admin.edit_health_plan', plan_id=plan.id) }}"
+                 class="btn btn-ghost btn-icon btn-sm" title="Editar">✏</a>
+              <form method="POST" action="{{ url_for('admin.toggle_health_plan', plan_id=plan.id) }}" style="display:inline">
+                <button type="submit" class="btn btn-ghost btn-icon btn-sm"
+                        title="{{ 'Desativar' if plan.is_active else 'Ativar' }}">
+                  {{ '🔴' if plan.is_active else '🟢' }}
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">🏥</div>
+  <h3>Nenhum plano cadastrado</h3>
+  <p style="color:var(--text-muted)">Cadastre os planos de saúde aceitos pelo consultório.</p>
+  <a href="{{ url_for('admin.new_health_plan') }}" class="btn btn-primary" style="margin-top:1rem">
+    Cadastrar plano
+  </a>
+</div>
+{% endif %}
+{% endblock %}

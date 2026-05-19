@@ -1,0 +1,120 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Pacientes{% endblock %}
+{% block page_title %}Pacientes{% endblock %}
+
+{% block content %}
+<!-- Header e busca -->
+<div class="d-flex items-center justify-between mb-4 flex-wrap gap-3">
+  <form method="GET" class="d-flex gap-2 flex-1" style="max-width:420px">
+    <div class="search-box flex-1">
+      <span class="search-icon">🔍</span>
+      <input type="text" name="q" value="{{ search }}" placeholder="Buscar por nome, e-mail, CPF...">
+    </div>
+    <button type="submit" class="btn btn-primary btn-sm">Buscar</button>
+    {% if search %}
+    <a href="{{ url_for('admin.patients') }}" class="btn btn-outline-secondary btn-sm">✕</a>
+    {% endif %}
+  </form>
+  <a href="{{ url_for('admin.new_patient') }}" class="btn btn-primary btn-sm">
+    ➕ Novo paciente
+  </a>
+</div>
+
+{% if search %}
+<div class="alert alert-info mb-4">
+  <span>ℹ</span>
+  <span>{{ patients.total }} resultado(s) para "{{ search }}"</span>
+</div>
+{% endif %}
+
+<!-- Tabela -->
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Paciente</th>
+          <th>Contato</th>
+          <th>CPF</th>
+          <th>Cadastro</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for patient in patients.items %}
+        <tr>
+          <td>
+            <div class="d-flex items-center gap-3">
+              <div class="avatar avatar-sm">{{ patient.name[:2]|upper }}</div>
+              <div>
+                <div style="font-weight:600">{{ patient.name }}</div>
+                <div style="font-size:.8rem;color:var(--text-muted)">{{ patient.email }}</div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div style="font-size:.875rem">{{ patient.phone or '—' }}</div>
+            {% if patient.whatsapp %}
+            <div style="font-size:.8rem;color:var(--success)">💬 {{ patient.whatsapp }}</div>
+            {% endif %}
+          </td>
+          <td style="font-family:var(--font-mono);font-size:.875rem">{{ patient.cpf or '—' }}</td>
+          <td style="font-size:.875rem;color:var(--text-secondary)">{{ patient.created_at.strftime('%d/%m/%Y') }}</td>
+          <td>
+            <span class="badge {{ 'badge-success' if patient.is_active else 'badge-danger' }}">
+              {{ 'Ativo' if patient.is_active else 'Inativo' }}
+            </span>
+          </td>
+          <td>
+            <div class="d-flex gap-2">
+              <a href="{{ url_for('admin.patient_detail', patient_id=patient.id) }}" class="btn btn-ghost btn-icon btn-sm" title="Ver detalhes">👁</a>
+              <a href="{{ url_for('admin.edit_patient', patient_id=patient.id) }}" class="btn btn-ghost btn-icon btn-sm" title="Editar">✏</a>
+              {% if patient.whatsapp %}
+              <button onclick="openWhatsApp('{{ patient.whatsapp }}')" class="btn btn-ghost btn-icon btn-sm" title="WhatsApp" style="color:#25D366">💬</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center" style="padding:3rem;color:var(--text-muted)">Nenhum paciente encontrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Paginação -->
+  {% if patients.pages > 1 %}
+  <div class="card-footer d-flex items-center justify-between">
+    <span style="font-size:.875rem;color:var(--text-secondary)">
+      {{ patients.total }} pacientes · Página {{ patients.page }} de {{ patients.pages }}
+    </span>
+    <ul class="pagination">
+      {% if patients.has_prev %}
+      <li class="page-item"><a class="page-link" href="?q={{ search }}&page={{ patients.prev_num }}">‹</a></li>
+      {% endif %}
+      {% for page in patients.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if page %}
+        <li class="page-item {{ 'active' if page == patients.page }}">
+          <a class="page-link" href="?q={{ search }}&page={{ page }}">{{ page }}</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      {% if patients.has_next %}
+      <li class="page-item"><a class="page-link" href="?q={{ search }}&page={{ patients.next_num }}">›</a></li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function openWhatsApp(phone) {
+  const digits = phone.replace(/\D/g,'');
+  const number = digits.startsWith('55') ? digits : '55' + digits;
+  window.open(`https://wa.me/${number}`, '_blank');
+}
+</script>
+{% endblock %}

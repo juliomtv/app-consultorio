@@ -1,0 +1,42 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Profissionais{% endblock %}
+{% block page_title %}Profissionais{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-end mb-4">
+  <a href="{{ url_for('admin.new_professional') }}" class="btn btn-primary">➕ Novo profissional</a>
+</div>
+
+{% if professionals %}
+<div class="grid-auto">
+  {% for prof in professionals %}
+  <div class="professional-card">
+    <div class="avatar avatar-lg">{{ prof.user.name[:2]|upper }}</div>
+    <div class="professional-info">
+      <div class="professional-name">{{ prof.user.name }}</div>
+      <div class="professional-specialty">{{ prof.specialty }}</div>
+      {% if prof.council_type and prof.council_number %}
+      <div class="professional-council">{{ prof.council_type }} {{ prof.council_number }}</div>
+      {% endif %}
+      {% if prof.bio %}
+      <div style="font-size:.8125rem;color:var(--text-secondary);margin-top:.375rem">{{ prof.bio[:120] }}...</div>
+      {% endif %}
+    </div>
+    <div class="professional-actions">
+      <span class="badge {{ 'badge-success' if prof.is_active else 'badge-danger' }}">
+        {{ 'Ativo' if prof.is_active else 'Inativo' }}
+      </span>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <div class="empty-state-icon">🩺</div>
+  <h3>Nenhum profissional cadastrado</h3>
+  <a href="{{ url_for('admin.new_professional') }}" class="btn btn-primary" style="margin-top:1rem">
+    Cadastrar profissional
+  </a>
+</div>
+{% endif %}
+{% endblock %}

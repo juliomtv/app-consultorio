@@ -1,0 +1,86 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ 'Editar' if patient else 'Novo' }} Paciente{% endblock %}
+{% block page_title %}{{ 'Editar' if patient else 'Novo' }} Paciente{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;margin:0 auto">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">{{ '✏ Editar' if patient else '➕ Cadastrar novo' }} paciente</span>
+    </div>
+    <div class="card-body">
+      <form method="POST">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Nome completo <span class="required">*</span></label>
+            <input type="text" name="name" class="form-control" required value="{{ patient.name if patient else '' }}">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">E-mail <span class="required">*</span></label>
+            <input type="email" name="email" class="form-control" required
+                   value="{{ patient.email if patient else '' }}" {{ 'readonly' if patient }}>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Telefone</label>
+            <input type="tel" name="phone" class="form-control" data-mask="phone"
+                   value="{{ patient.phone if patient else '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">WhatsApp</label>
+            <input type="tel" name="whatsapp" class="form-control" data-mask="phone"
+                   value="{{ patient.whatsapp if patient else '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">CPF</label>
+            <input type="text" name="cpf" class="form-control" data-mask="cpf" maxlength="14"
+                   value="{{ patient.cpf if patient else '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Data de nascimento</label>
+            <input type="date" name="birth_date" class="form-control"
+                   value="{{ patient.birth_date.strftime('%Y-%m-%d') if patient and patient.birth_date else '' }}">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tipo sanguíneo</label>
+            <select name="blood_type" class="form-control form-select">
+              <option value="">Selecionar</option>
+              {% for bt in ['A+','A-','B+','B-','AB+','AB-','O+','O-'] %}
+              <option value="{{ bt }}" {{ 'selected' if patient and patient.blood_type == bt }}>{{ bt }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          {% if patient %}
+          <div class="form-group d-flex items-center gap-3">
+            <label class="form-label" style="margin:0">Status</label>
+            <label class="form-check">
+              <input type="checkbox" name="is_active" {{ 'checked' if patient.is_active }}>
+              Ativo
+            </label>
+          </div>
+          {% endif %}
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Endereço</label>
+            <input type="text" name="address" class="form-control"
+                   value="{{ patient.address if patient else '' }}" placeholder="Rua, número, bairro, cidade">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Alergias</label>
+            <textarea name="allergies" class="form-control" rows="2" placeholder="Alergias a medicamentos, alimentos...">{{ patient.allergies if patient else '' }}</textarea>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Observações internas</label>
+            <textarea name="observations" class="form-control" rows="2" placeholder="Observações visíveis apenas para a equipe...">{{ patient.observations if patient else '' }}</textarea>
+          </div>
+        </div>
+
+        <div class="d-flex gap-3 mt-4">
+          <a href="{{ url_for('admin.patients') }}" class="btn btn-outline-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-primary">
+            {{ 'Salvar alterações' if patient else 'Cadastrar paciente' }}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

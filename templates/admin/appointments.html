@@ -1,0 +1,123 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Consultas{% endblock %}
+{% block page_title %}Gerenciar Consultas{% endblock %}
+
+{% block content %}
+<!-- Filtros -->
+<div class="filter-bar mb-4">
+  <span class="filter-label">Filtros</span>
+  <form method="GET" class="d-flex gap-2 flex-wrap items-center">
+    <input type="date" name="date" value="{{ date_filter }}" class="form-control" style="width:auto">
+    <select name="status" class="form-control form-select" style="width:auto">
+      <option value="all" {{ 'selected' if status_filter=='all' }}>Todos os status</option>
+      <option value="scheduled" {{ 'selected' if status_filter=='scheduled' }}>Agendada</option>
+      <option value="confirmed" {{ 'selected' if status_filter=='confirmed' }}>Confirmada</option>
+      <option value="completed" {{ 'selected' if status_filter=='completed' }}>Concluída</option>
+      <option value="cancelled" {{ 'selected' if status_filter=='cancelled' }}>Cancelada</option>
+      <option value="no_show" {{ 'selected' if status_filter=='no_show' }}>Ausente</option>
+    </select>
+    <select name="professional_id" class="form-control form-select" style="width:auto">
+      <option value="all">Todos os profissionais</option>
+      {% for prof in professionals %}
+      <option value="{{ prof.id }}" {{ 'selected' if professional_filter == prof.id|string }}>
+        {{ prof.user.name }}
+      </option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+    <a href="{{ url_for('admin.appointments') }}" class="btn btn-outline-secondary btn-sm">Limpar</a>
+  </form>
+</div>
+
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Paciente</th>
+          <th>Profissional</th>
+          <th>Data / Hora</th>
+          <th>Tipo</th>
+          <th>Status</th>
+          <th>Valor</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for appt in appointments.items %}
+        <tr>
+          <td>
+            <a href="{{ url_for('admin.patient_detail', patient_id=appt.patient_id) }}"
+               style="font-weight:600;color:var(--text-primary)">
+              {{ appt.patient.name if appt.patient else '—' }}
+            </a>
+          </td>
+          <td style="font-size:.875rem;color:var(--text-secondary)">
+            {{ appt.professional.user.name if appt.professional else '—' }}
+          </td>
+          <td>
+            <div style="font-weight:600">{{ appt.date.strftime('%d/%m/%Y') }}</div>
+            <div style="font-size:.8rem;color:var(--text-muted)">{{ appt.time }} ({{ appt.duration }}min)</div>
+          </td>
+          <td style="font-size:.875rem">{{ appt.type }}</td>
+          <td>
+            <span class="badge badge-{{ 'success' if appt.status=='confirmed' else 'primary' if appt.status=='scheduled' else 'danger' if appt.status=='cancelled' else 'muted' if appt.status=='completed' else 'warning' }}">
+              {{ {'scheduled':'Agendada','confirmed':'Confirmada','cancelled':'Cancelada','completed':'Concluída','no_show':'Ausente'}.get(appt.status,appt.status) }}
+            </span>
+          </td>
+          <td style="font-size:.875rem">
+            {% if appt.price %}R$ {{ '%.2f'|format(appt.price) }}{% else %}—{% endif %}
+            {% if appt.is_paid %}<span class="badge badge-success" style="margin-left:.25rem">✓ Pago</span>{% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-1">
+              <button onclick="changeAppointmentStatus({{ appt.id }}, '{{ appt.status }}')"
+                      class="btn btn-ghost btn-icon btn-sm" title="Alterar status">✏</button>
+              {% if appt.patient and appt.patient.whatsapp %}
+              <button onclick="openWhatsApp('{{ appt.patient.whatsapp }}')"
+                      class="btn btn-ghost btn-icon btn-sm" style="color:#25D366" title="WhatsApp">💬</button>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center" style="padding:3rem;color:var(--text-muted)">Nenhuma consulta encontrada.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if appointments.pages > 1 %}
+  <div class="card-footer d-flex items-center justify-between">
+    <span style="font-size:.875rem;color:var(--text-secondary)">
+      {{ appointments.total }} consultas · Página {{ appointments.page }} de {{ appointments.pages }}
+    </span>
+    <ul class="pagination">
+      {% if appointments.has_prev %}
+      <li class="page-item"><a class="page-link" href="?date={{ date_filter }}&status={{ status_filter }}&professional_id={{ professional_filter }}&page={{ appointments.prev_num }}">‹</a></li>
+      {% endif %}
+      {% for page in appointments.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if page %}
+        <li class="page-item {{ 'active' if page == appointments.page }}">
+          <a class="page-link" href="?date={{ date_filter }}&status={{ status_filter }}&professional_id={{ professional_filter }}&page={{ page }}">{{ page }}</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      {% if appointments.has_next %}
+      <li class="page-item"><a class="page-link" href="?date={{ date_filter }}&status={{ status_filter }}&professional_id={{ professional_filter }}&page={{ appointments.next_num }}">›</a></li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+function openWhatsApp(phone) {
+  const digits = phone.replace(/\D/g,'');
+  const number = digits.startsWith('55') ? digits : '55' + digits;
+  window.open(`https://wa.me/${number}`, '_blank');
+}
+</script>
+{% endblock %}

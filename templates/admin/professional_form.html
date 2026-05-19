@@ -1,0 +1,50 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Novo Profissional{% endblock %}
+{% block page_title %}Novo Profissional{% endblock %}
+
+{% block content %}
+<div style="max-width:680px;margin:0 auto">
+  <div class="card">
+    <div class="card-header"><span class="card-title">🩺 Cadastrar profissional</span></div>
+    <div class="card-body">
+      <form method="POST">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Nome completo <span class="required">*</span></label>
+            <input type="text" name="name" class="form-control" required>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">E-mail <span class="required">*</span></label>
+            <input type="email" name="email" class="form-control" required>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Especialidade <span class="required">*</span></label>
+            <input type="text" name="specialty" class="form-control" required placeholder="Ex: Ginecologia, Obstetrícia">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tipo de conselho</label>
+            <select name="council_type" class="form-control form-select">
+              <option value="">Selecionar</option>
+              {% for c in ['CRM','CRO','CFP','CRP','CREFITO','CRN','COREN','CFM'] %}
+              <option value="{{ c }}">{{ c }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Número do conselho</label>
+            <input type="text" name="council_number" class="form-control" placeholder="Ex: 12345-SP">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Bio / Apresentação</label>
+            <textarea name="bio" class="form-control" rows="3" placeholder="Breve apresentação do profissional..."></textarea>
+          </div>
+        </div>
+        <div class="d-flex gap-3 mt-4">
+          <a href="{{ url_for('admin.professionals') }}" class="btn btn-outline-secondary">Cancelar</a>
+          <button type="submit" class="btn btn-primary">Cadastrar profissional</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,221 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}{{ patient.name }}{% endblock %}
+{% block page_title %}Detalhes do Paciente{% endblock %}
+
+{% block content %}
+<!-- Header do paciente -->
+<div class="patient-header">
+  <div class="avatar avatar-lg">{{ patient.name[:2]|upper }}</div>
+  <div class="patient-header-info" style="flex:1">
+    <h2>{{ patient.name }}</h2>
+    <p style="color:rgba(255,255,255,.8);margin:.25rem 0 0">{{ patient.email }}</p>
+    <div class="patient-meta">
+      {% if patient.phone %}
+      <span class="patient-meta-item">📞 {{ patient.phone }}</span>
+      {% endif %}
+      {% if patient.cpf %}
+      <span class="patient-meta-item">🪪 {{ patient.cpf }}</span>
+      {% endif %}
+      {% if patient.birth_date %}
+      <span class="patient-meta-item">🎂 {{ patient.birth_date.strftime('%d/%m/%Y') }}</span>
+      {% endif %}
+      {% if patient.blood_type %}
+      <span class="patient-meta-item">🩸 {{ patient.blood_type }}</span>
+      {% endif %}
+    </div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:.625rem;align-items:flex-end">
+    <a href="{{ url_for('admin.edit_patient', patient_id=patient.id) }}" class="btn btn-sm" style="background:rgba(255,255,255,.2);color:white">✏ Editar</a>
+    {% if patient.whatsapp %}
+    <button onclick="openWhatsApp('{{ patient.whatsapp }}')" class="btn btn-sm btn-whatsapp">💬 WhatsApp</button>
+    {% endif %}
+    <form method="POST" action="{{ url_for('admin.send_notification') }}" style="display:none" id="sendNotifForm">
+      <input type="hidden" name="patient_id" value="{{ patient.id }}">
+    </form>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs mb-4">
+  <div class="tab-item active" data-tab="appts">📅 Consultas ({{ appointments|length }})</div>
+  <div class="tab-item" data-tab="docs">📄 Documentos ({{ documents|length }})</div>
+  <div class="tab-item" data-tab="info">👤 Informações</div>
+  <div class="tab-item" data-tab="notif">🔔 Enviar notificação</div>
+</div>
+
+<!-- Painel: Consultas -->
+<div id="appts" class="tab-panel">
+  <div class="card">
+    {% if appointments %}
+    <div class="table-wrapper">
+      <table class="table">
+        <thead>
+          <tr><th>Data</th><th>Horário</th><th>Profissional</th><th>Tipo</th><th>Status</th><th>Ações</th></tr>
+        </thead>
+        <tbody>
+          {% for appt in appointments %}
+          <tr>
+            <td>{{ appt.date.strftime('%d/%m/%Y') }}</td>
+            <td>{{ appt.time }}</td>
+            <td>{{ appt.professional.user.name if appt.professional else '—' }}</td>
+            <td>{{ appt.type }}</td>
+            <td>
+              <span class="badge badge-{{ 'success' if appt.status=='confirmed' else 'primary' if appt.status=='scheduled' else 'danger' if appt.status=='cancelled' else 'muted' }}">
+                {{ {'scheduled':'Agendada','confirmed':'Confirmada','cancelled':'Cancelada','completed':'Concluída','no_show':'Ausente'}.get(appt.status,appt.status) }}
+              </span>
+            </td>
+            <td>
+              <button onclick="changeAppointmentStatus({{ appt.id }}, '{{ appt.status }}')"
+                      class="btn btn-ghost btn-icon btn-sm">✏</button>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:2rem">
+      <div class="empty-state-icon">📅</div>
+      <h3>Nenhuma consulta</h3>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Painel: Documentos -->
+<div id="docs" class="tab-panel" style="display:none">
+  <div class="card mb-4">
+    <div class="card-header"><span class="card-title">⬆ Enviar documento para o paciente</span></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('admin.upload_patient_document', patient_id=patient.id) }}" enctype="multipart/form-data">
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:1rem;align-items:end">
+          <div class="form-group">
+            <label class="form-label">Arquivo</label>
+            <input type="file" name="file" class="form-control" id="adminFileInput" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Categoria</label>
+            <select name="category" class="form-control form-select">
+              <option value="geral">Geral</option>
+              <option value="exame">Exame</option>
+              <option value="receita">Receita</option>
+              <option value="laudo">Laudo</option>
+              <option value="atestado">Atestado</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary">Enviar</button>
+        </div>
+        <div class="form-group mt-2">
+          <label class="form-check">
+            <input type="checkbox" name="visible" checked> Visível para o paciente
+          </label>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    {% if documents %}
+    <div class="table-wrapper">
+      <table class="table">
+        <thead>
+          <tr><th>Arquivo</th><th>Categoria</th><th>Tamanho</th><th>Enviado em</th><th>Ações</th></tr>
+        </thead>
+        <tbody>
+          {% for doc in documents %}
+          <tr>
+            <td>{{ doc.original_name or doc.filename }}</td>
+            <td>{{ doc.category | title }}</td>
+            <td>{{ '%.1f KB'|format(doc.file_size/1024) if doc.file_size else '—' }}</td>
+            <td>{{ doc.created_at.strftime('%d/%m/%Y') }}</td>
+            <td>
+              <a href="{{ url_for('admin.view_document', doc_id=doc.id) }}" target="_blank"
+                 class="btn btn-ghost btn-icon btn-sm">👁</a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="empty-state" style="padding:2rem"><div class="empty-state-icon">📁</div><h3>Nenhum documento</h3></div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Painel: Informações -->
+<div id="info" class="tab-panel" style="display:none">
+  <div class="card">
+    <div class="card-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.5rem">
+        {% for label, value in [
+          ('E-mail', patient.email),
+          ('Telefone', patient.phone or '—'),
+          ('WhatsApp', patient.whatsapp or '—'),
+          ('CPF', patient.cpf or '—'),
+          ('Nascimento', patient.birth_date.strftime('%d/%m/%Y') if patient.birth_date else '—'),
+          ('Tipo sanguíneo', patient.blood_type or '—'),
+        ] %}
+        <div>
+          <div style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">{{ label }}</div>
+          <div style="font-size:.9375rem;margin-top:.25rem;color:var(--text-primary)">{{ value }}</div>
+        </div>
+        {% endfor %}
+
+        {% if patient.address %}
+        <div style="grid-column:1/-1">
+          <div style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Endereço</div>
+          <div style="font-size:.9375rem;margin-top:.25rem">{{ patient.address }}</div>
+        </div>
+        {% endif %}
+
+        {% if patient.allergies %}
+        <div style="grid-column:1/-1">
+          <div style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted)">Alergias</div>
+          <div style="font-size:.9375rem;margin-top:.25rem;color:var(--danger)">⚠ {{ patient.allergies }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Painel: Notificação -->
+<div id="notif" class="tab-panel" style="display:none">
+  <div class="card" style="max-width:560px">
+    <div class="card-header"><span class="card-title">🔔 Enviar notificação para {{ patient.name.split()[0] }}</span></div>
+    <div class="card-body">
+      <form method="POST" action="{{ url_for('admin.send_notification') }}">
+        <input type="hidden" name="patient_id" value="{{ patient.id }}">
+        <div class="form-group mb-3">
+          <label class="form-label">Tipo</label>
+          <select name="type" class="form-control form-select">
+            <option value="info">ℹ Informativo</option>
+            <option value="success">✓ Sucesso</option>
+            <option value="warning">⚠ Atenção</option>
+            <option value="appointment">📅 Consulta</option>
+          </select>
+        </div>
+        <div class="form-group mb-3">
+          <label class="form-label">Título</label>
+          <input type="text" name="title" class="form-control" required placeholder="Ex: Lembrete de consulta">
+        </div>
+        <div class="form-group mb-4">
+          <label class="form-label">Mensagem</label>
+          <textarea name="message" class="form-control" rows="3" required
+                    placeholder="Digite a mensagem para o paciente..."></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Enviar notificação</button>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function openWhatsApp(phone) {
+  const digits = phone.replace(/\D/g,'');
+  const number = digits.startsWith('55') ? digits : '55' + digits;
+  window.open(`https://wa.me/${number}`, '_blank');
+}
+</script>
+{% endblock %}

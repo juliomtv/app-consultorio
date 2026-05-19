@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Ambiente virtual
+venv/
+env/
+.env
+.env.*
+*.env
+
+# Banco de dados
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads e arquivos de usuário
+uploads/
+documents/
+library/
+static/uploads/
+static/documents/
+static/library/
+
+# Logs
+*.log
+flask_out.txt
+flask_err.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Flask session
+flask_session/
+
+# Migrations (gerar localmente)
+migrations/versions/

@@ -1,0 +1,134 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Guias de Plano{% endblock %}
+{% block page_title %}Guias de Plano de Saúde{% endblock %}
+
+{% block content %}
+<!-- Filtros -->
+<div class="filter-bar mb-4">
+  <span class="filter-label">Filtros</span>
+  <form method="GET" class="d-flex gap-2 flex-wrap items-center">
+    <select name="status" class="form-control form-select" style="width:auto">
+      <option value="all"       {{ 'selected' if status_filter=='all' }}>Todos os status</option>
+      <option value="pending"   {{ 'selected' if status_filter=='pending' }}>Pendente</option>
+      <option value="authorized"{{ 'selected' if status_filter=='authorized' }}>Autorizada</option>
+      <option value="submitted" {{ 'selected' if status_filter=='submitted' }}>Enviada</option>
+      <option value="paid"      {{ 'selected' if status_filter=='paid' }}>Paga</option>
+      <option value="denied"    {{ 'selected' if status_filter=='denied' }}>Negada</option>
+      <option value="cancelled" {{ 'selected' if status_filter=='cancelled' }}>Cancelada</option>
+    </select>
+    <select name="plan_id" class="form-control form-select" style="width:auto">
+      <option value="all">Todos os planos</option>
+      {% for p in plans %}
+      <option value="{{ p.id }}" {{ 'selected' if plan_filter == p.id|string }}>{{ p.name }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm">Filtrar</button>
+    <a href="{{ url_for('admin.insurance_guides') }}" class="btn btn-outline-secondary btn-sm">Limpar</a>
+  </form>
+  <a href="{{ url_for('admin.new_insurance_guide') }}" class="btn btn-primary btn-sm" style="margin-left:auto">
+    + Nova guia
+  </a>
+</div>
+
+<div class="card">
+  <div class="table-wrapper">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Nº Guia / Autorização</th>
+          <th>Paciente</th>
+          <th>Plano</th>
+          <th>Procedimento</th>
+          <th>Valores (Sol. / Aut. / Pago)</th>
+          <th>Validade</th>
+          <th>Status</th>
+          <th>Ações</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in guides.items %}
+        {% set status_badge = {
+          'pending':'badge-warning','authorized':'badge-primary',
+          'submitted':'badge-info','paid':'badge-success',
+          'denied':'badge-danger','cancelled':'badge-muted'
+        } %}
+        {% set status_label = {
+          'pending':'Pendente','authorized':'Autorizada',
+          'submitted':'Enviada','paid':'Paga',
+          'denied':'Negada','cancelled':'Cancelada'
+        } %}
+        <tr>
+          <td>
+            <div style="font-weight:600;font-size:.875rem">{{ g.guide_number or '—' }}</div>
+            {% if g.authorization_code %}
+            <div style="font-size:.75rem;color:var(--text-muted)">Aut: {{ g.authorization_code }}</div>
+            {% endif %}
+          </td>
+          <td>
+            <a href="{{ url_for('admin.patient_detail', patient_id=g.patient_id) }}"
+               style="font-weight:600;color:var(--text-primary);font-size:.875rem">
+              {{ g.patient.name if g.patient else '—' }}
+            </a>
+          </td>
+          <td style="font-size:.875rem">{{ g.plan.name if g.plan else '—' }}</td>
+          <td style="font-size:.8rem">
+            {% if g.procedure_code %}<div>{{ g.procedure_code }}</div>{% endif %}
+            <div style="color:var(--text-muted)">{{ g.procedure_name[:40] if g.procedure_name else '—' }}</div>
+          </td>
+          <td style="font-size:.8rem">
+            <div>Sol: R$ {{ '%.2f'|format(g.requested_value) }}</div>
+            <div>Aut: R$ {{ '%.2f'|format(g.authorized_value) }}</div>
+            <div style="color:#10b981;font-weight:600">Pago: R$ {{ '%.2f'|format(g.paid_value) }}</div>
+          </td>
+          <td style="font-size:.8rem">
+            {% if g.expiry_date %}
+              {{ g.expiry_date.strftime('%d/%m/%Y') }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            <span class="badge {{ status_badge.get(g.status, 'badge-muted') }}">
+              {{ status_label.get(g.status, g.status) }}
+            </span>
+          </td>
+          <td>
+            <a href="{{ url_for('admin.edit_insurance_guide', guide_id=g.id) }}"
+               class="btn btn-ghost btn-icon btn-sm" title="Editar">✏</a>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center" style="padding:3rem;color:var(--text-muted)">
+            Nenhuma guia encontrada.
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if guides.pages > 1 %}
+  <div class="card-footer d-flex items-center justify-between">
+    <span style="font-size:.875rem;color:var(--text-secondary)">
+      {{ guides.total }} guias · Página {{ guides.page }} de {{ guides.pages }}
+    </span>
+    <ul class="pagination">
+      {% if guides.has_prev %}
+      <li class="page-item"><a class="page-link" href="?status={{ status_filter }}&plan_id={{ plan_filter }}&page={{ guides.prev_num }}">‹</a></li>
+      {% endif %}
+      {% for p in guides.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+        {% if p %}
+        <li class="page-item {{ 'active' if p == guides.page }}">
+          <a class="page-link" href="?status={{ status_filter }}&plan_id={{ plan_filter }}&page={{ p }}">{{ p }}</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">…</span></li>
+        {% endif %}
+      {% endfor %}
+      {% if guides.has_next %}
+      <li class="page-item"><a class="page-link" href="?status={{ status_filter }}&plan_id={{ plan_filter }}&page={{ guides.next_num }}">›</a></li>
+      {% endif %}
+    </ul>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

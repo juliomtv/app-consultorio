@@ -1,0 +1,70 @@
+{% extends "patient/base_patient.html" %}
+{% block title %}Reagendar Consulta{% endblock %}
+{% block page_title %}Reagendar Consulta{% endblock %}
+
+{% block content %}
+<div style="max-width:560px;margin:0 auto">
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">📅 Reagendar consulta</span>
+    </div>
+    <div class="card-body">
+      <div class="alert alert-info mb-4">
+        <span>ℹ</span>
+        <div>
+          <strong>Consulta atual:</strong><br>
+          {{ appt.date.strftime('%d/%m/%Y') }} às {{ appt.time }} com
+          {{ appt.professional.user.name if appt.professional else 'Profissional' }}
+        </div>
+      </div>
+
+      <form method="POST">
+        <div class="form-group mb-4">
+          <label class="form-label">Nova data</label>
+          <input type="date" name="date" id="appointmentDate" class="form-control" required>
+        </div>
+
+        <div class="form-group mb-6" id="timeSlotsGroup">
+          <label class="form-label">Novo horário</label>
+          <div class="time-slots" id="timeSlots">
+            <p class="text-muted text-sm">Selecione uma data para ver os horários.</p>
+          </div>
+          <input type="hidden" name="time" id="selectedTime" required>
+        </div>
+
+        <div class="d-flex gap-3">
+          <a href="{{ url_for('patient.appointments') }}" class="btn btn-outline-secondary flex-1">Cancelar</a>
+          <button type="submit" class="btn btn-primary flex-1">Confirmar reagendamento</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Configurar professional_id fixo para carregar horários
+  window._professionalId = '{{ appt.professional_id }}';
+  const origLoadSlots = window.loadTimeSlots;
+  const professionalSelect = { value: window._professionalId };
+  document.getElementById('appointmentDate')?.addEventListener('change', loadTimeSlots);
+
+  // Override para usar professional_id fixo
+  async function loadTimeSlots() {
+    const date = document.getElementById('appointmentDate').value;
+    if (!date) return;
+    const container = document.getElementById('timeSlots');
+    container.innerHTML = '<div class="d-flex justify-center py-4"><span class="spinner"></span></div>';
+    try {
+      const res = await fetch(`/api/v1/horarios-disponiveis?professional_id=${window._professionalId}&date=${date}`);
+      const data = await res.json();
+      if (!data.data || data.data.length === 0) {
+        container.innerHTML = '<p class="text-muted text-sm text-center py-4">Nenhum horário disponível.</p>';
+        return;
+      }
+      container.innerHTML = data.data.map(s => `
+        <button type="button" class="time-slot" data-time="${s}" onclick="selectTimeSlot(this,'${s}')">${s}</button>
+      `).join('');
+    } catch(_) { container.innerHTML = '<p class="text-danger text-sm">Erro ao carregar horários.</p>'; }
+  }
+</script>
+{% endblock %}
