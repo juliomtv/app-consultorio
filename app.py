@@ -124,17 +124,20 @@ def _seed_defaults(app):
     # 3. Tenant admin
     admin_email = app.config['ADMIN_EMAIL']
     if not User.query.filter_by(email=admin_email).first():
-        admin = User(
-            name='Administrador',
-            email=admin_email,
-            role='admin',
-            is_active=True,
-            tenant_id=tenant.id,
-        )
-        admin.set_password(app.config['ADMIN_PASSWORD'])
-        db.session.add(admin)
-        db.session.commit()
-        print(f'[SEED] Admin criado: {admin_email}')
+        try:
+            admin = User(
+                name='Administrador',
+                email=admin_email,
+                role='admin',
+                is_active=True,
+                tenant_id=tenant.id,
+            )
+            admin.set_password(app.config['ADMIN_PASSWORD'])
+            db.session.add(admin)
+            db.session.commit()
+            print(f'[SEED] Admin criado: {admin_email}')
+        except Exception:
+            db.session.rollback()
 
 
 if __name__ == '__main__':
