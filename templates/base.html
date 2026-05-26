@@ -8,9 +8,9 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Consultório">
+  <meta name="apple-mobile-web-app-title" content="{{ branding.company_name }}">
 
-  <title>{% block title %}Consultório{% endblock %} — Sistema de Gestão</title>
+  <title>{% block title %}{{ branding.company_name }}{% endblock %} — Sistema de Gestão</title>
 
   <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" type="image/png" href="/static/icons/icon-96.png">
@@ -34,8 +34,8 @@
   <a href="{% block brand_url %}#{% endblock %}" class="sidebar-brand">
     <div class="sidebar-brand-icon">🏥</div>
     <div>
-      <div class="sidebar-brand-name">{% block clinic_name %}Consultório{% endblock %}</div>
-      <div class="sidebar-brand-sub">{% block clinic_sub %}Sistema de Gestão{% endblock %}</div>
+      <div class="sidebar-brand-name">{% block clinic_name %}{{ branding.company_name }}{% endblock %}</div>
+      <div class="sidebar-brand-sub">{% block clinic_sub %}{{ branding.tagline }}{% endblock %}</div>
     </div>
   </a>
 

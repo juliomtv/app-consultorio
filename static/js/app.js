@@ -166,32 +166,6 @@ document.querySelectorAll('[data-mask="phone"]').forEach(input => {
   input.addEventListener('input', () => { input.value = formatPhone(input.value); });
 });
 
-// ── NOTIFICAÇÕES (polling) ────────────────────────────────────
-async function updateNotificationCount() {
-  try {
-    const res = await fetch('/api/v1/notificacoes/nao-lidas');
-    if (!res.ok) return;
-    const data = await res.json();
-    const count = data?.data?.count || 0;
-    const badge = document.getElementById('notifCount');
-    const dot   = document.getElementById('notifDot');
-
-    if (badge) badge.textContent = count > 99 ? '99+' : count;
-    if (dot)   dot.style.display = count > 0 ? 'block' : 'none';
-
-    // Atualizar nav badge da sidebar
-    const navBadge = document.querySelector('.nav-notif-badge');
-    if (navBadge) {
-      navBadge.textContent = count;
-      navBadge.style.display = count > 0 ? 'inline-flex' : 'none';
-    }
-  } catch (_) {}
-}
-
-// Polling a cada 60s
-updateNotificationCount();
-setInterval(updateNotificationCount, 60000);
-
 // ── FORMATO DE DATA LEGÍVEL ───────────────────────────────────
 function formatDate(dateStr) {
   const d = new Date(dateStr);

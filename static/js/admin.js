@@ -18,7 +18,7 @@ async function doSearch() {
   if (!resultsContainer) return;
 
   if (q.length < 2) {
-    resultsContainer.style.display = 'none';
+    resultsContainer.classList.remove('open');
     return;
   }
 
@@ -40,14 +40,14 @@ async function doSearch() {
         </a>
       `).join('');
     }
-    resultsContainer.style.display = 'block';
+    resultsContainer.classList.add('open');
   } catch (_) {}
 }
 
 document.addEventListener('click', (e) => {
   const results = document.getElementById('searchResults');
   if (results && !results.contains(e.target) && e.target !== patientSearch) {
-    results.style.display = 'none';
+    results.classList.remove('open');
   }
 });
 

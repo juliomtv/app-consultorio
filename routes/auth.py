@@ -1,6 +1,6 @@
 import secrets
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session
 from flask_login import login_user, logout_user, login_required, current_user
 from database import db
 from database.models import User, SystemLog
@@ -44,9 +44,16 @@ def login():
             flash("Sua conta está desativada. Entre em contato com a clínica.", "warning")
             return render_template("auth/login.html")
 
+        if user.role == "patient":
+            flash("O portal do paciente não está disponível. Entre em contato com a clínica.", "warning")
+            return render_template("auth/login.html")
+
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
         db.session.commit()
+        # Grava o tenant do usuário na sessão para resolução correta em dev (localhost)
+        if user.tenant_id:
+            session['tenant_id'] = user.tenant_id
         log_action("login_success", user_id=user.id, details=f"Login de {user.name}")
 
         next_page = request.args.get("next")
@@ -55,65 +62,6 @@ def login():
         return _redirect_by_role(user)
 
     return render_template("auth/login.html")
-
-
-@auth_bp.route("/cadastro", methods=["GET", "POST"])
-def register():
-    if current_user.is_authenticated:
-        return _redirect_by_role(current_user)
-
-    if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        phone = request.form.get("phone", "").strip()
-        cpf = request.form.get("cpf", "").strip()
-        birth_date_str = request.form.get("birth_date", "")
-        password = request.form.get("password", "")
-        confirm_password = request.form.get("confirm_password", "")
-
-        errors = []
-        if not name or len(name) < 3:
-            errors.append("Nome deve ter pelo menos 3 caracteres.")
-        if not email:
-            errors.append("E-mail é obrigatório.")
-        if User.query.filter_by(email=email).first():
-            errors.append("Este e-mail já está cadastrado.")
-        if cpf and User.query.filter_by(cpf=cpf).first():
-            errors.append("Este CPF já está cadastrado.")
-        if len(password) < 8:
-            errors.append("Senha deve ter pelo menos 8 caracteres.")
-        if password != confirm_password:
-            errors.append("As senhas não coincidem.")
-
-        if errors:
-            for e in errors:
-                flash(e, "danger")
-            return render_template("auth/register.html")
-
-        birth_date = None
-        if birth_date_str:
-            try:
-                birth_date = datetime.strptime(birth_date_str, "%Y-%m-%d").date()
-            except ValueError:
-                pass
-
-        user = User(
-            name=name,
-            email=email,
-            phone=phone,
-            cpf=cpf or None,
-            birth_date=birth_date,
-            role="patient",
-        )
-        user.set_password(password)
-        db.session.add(user)
-        db.session.commit()
-        log_action("register", user_id=user.id, details=f"Novo paciente: {name}")
-
-        flash("Cadastro realizado! Faça login para continuar.", "success")
-        return redirect(url_for("auth.login"))
-
-    return render_template("auth/register.html")
 
 
 @auth_bp.route("/esqueci-senha", methods=["GET", "POST"])
@@ -168,11 +116,10 @@ def reset_password(token):
 def logout():
     log_action("logout", user_id=current_user.id)
     logout_user()
+    session.pop('tenant_id', None)
     flash("Você saiu do sistema.", "info")
     return redirect(url_for("auth.login"))
 
 
 def _redirect_by_role(user):
-    if user.is_admin():
-        return redirect(url_for("admin.dashboard"))
-    return redirect(url_for("patient.dashboard"))
+    return redirect(url_for("admin.dashboard"))

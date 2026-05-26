@@ -2,7 +2,7 @@ import os
 from datetime import datetime, date, timedelta
 from functools import wraps
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   request, current_app, send_from_directory, jsonify)
+                   request, current_app, send_from_directory, jsonify, g as _g)
 from flask_login import login_required, current_user
 from sqlalchemy import func, extract
 from database import db
@@ -13,6 +13,11 @@ from database.models import (User, Professional, Appointment, Document,
 from werkzeug.utils import secure_filename
 
 admin_bp = Blueprint("admin", __name__)
+
+
+def _tid():
+    """Returns the current tenant_id from request context, or None."""
+    return getattr(_g, 'tenant_id', None)
 
 
 def admin_required(f):
@@ -55,9 +60,14 @@ def log_action(action, entity=None, entity_id=None, details=None, status="succes
 def dashboard():
     today = date.today()
     month_start = today.replace(day=1)
+    tid = _tid()
+
+    base_patient_q = User.query.filter_by(role="patient")
+    if tid:
+        base_patient_q = base_patient_q.filter_by(tenant_id=tid)
 
     stats = {
-        "total_patients": User.query.filter_by(role="patient").count(),
+        "total_patients": base_patient_q.count(),
         "total_appointments": Appointment.query.count(),
         "today_appointments": Appointment.query.filter_by(date=today).count(),
         "month_appointments": Appointment.query.filter(Appointment.date >= month_start).count(),
@@ -66,8 +76,7 @@ def dashboard():
             .filter(FinancialTransaction.type == "income",
                     FinancialTransaction.status == "paid",
                     FinancialTransaction.paid_at >= month_start).scalar() or 0,
-        "new_patients_month": User.query.filter(
-            User.role == "patient",
+        "new_patients_month": base_patient_q.filter(
             User.created_at >= month_start
         ).count(),
     }
@@ -77,10 +86,10 @@ def dashboard():
                    .order_by(Appointment.time)
                    .all())
 
-    recent_patients = (User.query
-                       .filter_by(role="patient")
-                       .order_by(User.created_at.desc())
-                       .limit(5).all())
+    recent_q = User.query.filter_by(role="patient")
+    if tid:
+        recent_q = recent_q.filter_by(tenant_id=tid)
+    recent_patients = recent_q.order_by(User.created_at.desc()).limit(5).all()
 
     monthly_data = _get_monthly_chart_data()
 
@@ -112,7 +121,10 @@ def _get_monthly_chart_data():
 def patients():
     search = request.args.get("q", "")
     page = request.args.get("page", 1, type=int)
+    tid = _tid()
     query = User.query.filter_by(role="patient")
+    if tid:
+        query = query.filter_by(tenant_id=tid)
 
     if search:
         query = query.filter(
@@ -161,7 +173,7 @@ def new_patient():
             return render_template("admin/patient_form.html")
 
         user = User(name=name, email=email, phone=phone,
-                    cpf=cpf or None, role="patient")
+                    cpf=cpf or None, role="patient", tenant_id=_tid())
         user.set_password(secrets_token())
         if birth_date_str:
             try:
@@ -226,7 +238,7 @@ def new_professional():
             flash("E-mail já cadastrado.", "danger")
             return render_template("admin/professional_form.html")
 
-        user = User(name=name, email=email, role="professional")
+        user = User(name=name, email=email, role="professional", tenant_id=_tid())
         user.set_password(secrets_token())
         db.session.add(user)
         db.session.flush()
@@ -545,7 +557,11 @@ def secrets_token():
 @admin_required
 def new_appointment():
     professionals = Professional.query.filter_by(is_active=True).order_by(Professional.id).all()
-    patients = User.query.filter_by(role="patient", is_active=True).order_by(User.name).all()
+    tid = _tid()
+    patients_q = User.query.filter_by(role="patient", is_active=True)
+    if tid:
+        patients_q = patients_q.filter_by(tenant_id=tid)
+    patients = patients_q.order_by(User.name).all()
     plans = HealthPlan.query.filter_by(is_active=True).order_by(HealthPlan.name).all()
 
     if request.method == "POST":
@@ -737,7 +753,11 @@ def insurance_guides():
 @admin_required
 def new_insurance_guide():
     plans = HealthPlan.query.filter_by(is_active=True).order_by(HealthPlan.name).all()
-    patients = User.query.filter_by(role="patient", is_active=True).order_by(User.name).all()
+    tid = _tid()
+    patients_q = User.query.filter_by(role="patient", is_active=True)
+    if tid:
+        patients_q = patients_q.filter_by(tenant_id=tid)
+    patients = patients_q.order_by(User.name).all()
 
     if request.method == "POST":
         patient_id = request.form.get("patient_id")
@@ -784,7 +804,11 @@ def new_insurance_guide():
 def edit_insurance_guide(guide_id):
     guide = InsuranceGuide.query.get_or_404(guide_id)
     plans = HealthPlan.query.filter_by(is_active=True).order_by(HealthPlan.name).all()
-    patients = User.query.filter_by(role="patient", is_active=True).order_by(User.name).all()
+    tid = _tid()
+    patients_q = User.query.filter_by(role="patient", is_active=True)
+    if tid:
+        patients_q = patients_q.filter_by(tenant_id=tid)
+    patients = patients_q.order_by(User.name).all()
 
     if request.method == "POST":
         guide.guide_number = request.form.get("guide_number", "").strip()
@@ -805,3 +829,67 @@ def edit_insurance_guide(guide_id):
 
     return render_template("admin/insurance_guide_form.html",
                            plans=plans, patients=patients, guide=guide)
+
+
+# ── CONFIGURAÇÕES ──────────────────────────────────────────────────────────────
+
+@admin_bp.route("/configuracoes", methods=["GET", "POST"])
+@login_required
+@admin_required
+def settings():
+    from database.models import TenantSettings
+    tenant_id = _tid()
+    s = TenantSettings.query.filter_by(tenant_id=tenant_id).first()
+    if not s and tenant_id:
+        s = TenantSettings(tenant_id=tenant_id)
+        db.session.add(s)
+        db.session.commit()
+
+    if request.method == "POST":
+        if not s:
+            flash("Tenant não encontrado.", "danger")
+            return redirect(url_for("admin.settings"))
+
+        fields = ["company_name", "tagline", "logo_url", "favicon_url",
+                  "primary_color", "secondary_color", "bg_dark",
+                  "whatsapp", "support_email", "address", "footer_text", "custom_css"]
+        for field in fields:
+            val = request.form.get(field, "").strip() or None
+            setattr(s, field, val)
+        db.session.commit()
+        log_action("update_settings", "tenant_settings", s.id)
+        flash("Configurações salvas!", "success")
+        return redirect(url_for("admin.settings"))
+
+    return render_template("admin/settings.html", s=s)
+
+
+@admin_bp.route("/configuracoes/upload-logo", methods=["POST"])
+@login_required
+@admin_required
+def upload_logo():
+    from database.models import TenantSettings
+    if "file" not in request.files:
+        flash("Nenhum arquivo enviado.", "danger")
+        return redirect(url_for("admin.settings"))
+
+    file = request.files["file"]
+    if not file.filename or not allowed_file(file.filename, {"png", "jpg", "jpeg", "webp", "svg"}):
+        flash("Use PNG, JPG, WebP ou SVG.", "danger")
+        return redirect(url_for("admin.settings"))
+
+    logos_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "logos")
+    os.makedirs(logos_dir, exist_ok=True)
+    ext = file.filename.rsplit(".", 1)[-1].lower()
+    filename = f"logo_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.{ext}"
+    file.save(os.path.join(logos_dir, filename))
+    logo_url = f"/uploads/logos/{filename}"
+
+    tenant_id = _tid()
+    s = TenantSettings.query.filter_by(tenant_id=tenant_id).first()
+    if s:
+        s.logo_url = logo_url
+        db.session.commit()
+        log_action("upload_logo", "tenant_settings", s.id, logo_url)
+        flash("Logo atualizada!", "success")
+    return redirect(url_for("admin.settings"))

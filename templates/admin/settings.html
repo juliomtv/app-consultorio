@@ -1,0 +1,182 @@
+{% extends "admin/base_admin.html" %}
+{% block title %}Configurações{% endblock %}
+{% block page_title %}Configurações{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;margin:0 auto;display:flex;flex-direction:column;gap:1.5rem">
+
+  <!-- LOGO -->
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">🖼️ Logo do sistema</span>
+    </div>
+    <div class="card-body">
+      <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+        <div style="width:96px;height:96px;border-radius:16px;border:2px dashed var(--border);overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--bg-card);flex-shrink:0">
+          {% if branding.logo_url %}
+          <img src="{{ branding.logo_url }}" alt="Logo atual" style="width:100%;height:100%;object-fit:contain">
+          {% else %}
+          <span style="font-size:2rem;opacity:.3">🏥</span>
+          {% endif %}
+        </div>
+        <div style="flex:1;min-width:200px">
+          <p style="font-size:.875rem;color:var(--text-secondary);margin:0 0 .75rem">
+            Aparece no sidebar e na tela de login. PNG, JPG, WebP ou SVG recomendado com fundo transparente.
+          </p>
+          <form method="POST" action="{{ url_for('admin.upload_logo') }}" enctype="multipart/form-data"
+                style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap">
+            <label style="cursor:pointer">
+              <span class="btn btn-outline-secondary btn-sm">📁 Escolher arquivo</span>
+              <input type="file" name="file" accept=".png,.jpg,.jpeg,.webp,.svg"
+                     style="display:none" onchange="this.form.submit()">
+            </label>
+            {% if branding.logo_url %}
+            <span style="font-size:.8rem;color:var(--text-muted)">Logo atual definida</span>
+            {% else %}
+            <span style="font-size:.8rem;color:var(--text-muted)">Nenhuma logo enviada</span>
+            {% endif %}
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- IDENTIDADE VISUAL + INFORMAÇÕES -->
+  <form method="POST" action="{{ url_for('admin.settings') }}">
+    <div style="display:flex;flex-direction:column;gap:1.5rem">
+
+      <!-- Nome e Tagline -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🏷️ Identidade do consultório</span>
+        </div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Nome da empresa <span class="required">*</span></label>
+            <input type="text" name="company_name" class="form-control"
+                   value="{{ s.company_name or '' }}" placeholder="Ex: Clínica Vida Saúde" required>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Slogan / Tagline</label>
+            <input type="text" name="tagline" class="form-control"
+                   value="{{ s.tagline or '' }}" placeholder="Ex: Cuidando de você com carinho">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">URL da logo (alternativa ao upload)</label>
+            <input type="url" name="logo_url" class="form-control"
+                   value="{{ s.logo_url or '' }}" placeholder="https://...">
+            <span class="form-hint">Use o upload acima ou cole uma URL externa.</span>
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">URL do favicon</label>
+            <input type="url" name="favicon_url" class="form-control"
+                   value="{{ s.favicon_url or '' }}" placeholder="https://...">
+          </div>
+        </div>
+      </div>
+
+      <!-- Cores -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🎨 Cores</span>
+        </div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.25rem">
+          <div class="form-group">
+            <label class="form-label">Cor primária</label>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <input type="color" name="primary_color" class="form-control"
+                     value="{{ s.primary_color or '#4F46E5' }}"
+                     style="width:48px;height:40px;padding:2px;cursor:pointer">
+              <input type="text" name="primary_color" class="form-control"
+                     value="{{ s.primary_color or '#4F46E5' }}" readonly
+                     style="font-family:monospace;font-size:.875rem">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cor secundária</label>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <input type="color" name="secondary_color" class="form-control"
+                     value="{{ s.secondary_color or '#06B6D4' }}"
+                     style="width:48px;height:40px;padding:2px;cursor:pointer">
+              <input type="text" name="secondary_color" class="form-control"
+                     value="{{ s.secondary_color or '#06B6D4' }}" readonly
+                     style="font-family:monospace;font-size:.875rem">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cor de fundo</label>
+            <div style="display:flex;gap:.5rem;align-items:center">
+              <input type="color" name="bg_dark" class="form-control"
+                     value="{{ s.bg_dark or '#0F172A' }}"
+                     style="width:48px;height:40px;padding:2px;cursor:pointer">
+              <input type="text" name="bg_dark" class="form-control"
+                     value="{{ s.bg_dark or '#0F172A' }}" readonly
+                     style="font-family:monospace;font-size:.875rem">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Contato -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📞 Contato e endereço</span>
+        </div>
+        <div class="card-body" style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+          <div class="form-group">
+            <label class="form-label">WhatsApp</label>
+            <input type="text" name="whatsapp" class="form-control"
+                   value="{{ s.whatsapp or '' }}" placeholder="5511999999999">
+            <span class="form-hint">Com DDI e DDD, sem espaços.</span>
+          </div>
+          <div class="form-group">
+            <label class="form-label">E-mail de suporte</label>
+            <input type="email" name="support_email" class="form-control"
+                   value="{{ s.support_email or '' }}" placeholder="contato@clinica.com">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Endereço</label>
+            <input type="text" name="address" class="form-control"
+                   value="{{ s.address or '' }}" placeholder="Rua Exemplo, 123 — Cidade/UF">
+          </div>
+          <div class="form-group" style="grid-column:1/-1">
+            <label class="form-label">Texto do rodapé</label>
+            <input type="text" name="footer_text" class="form-control"
+                   value="{{ s.footer_text or '' }}"
+                   placeholder="© 2025 Clínica. Todos os direitos reservados.">
+          </div>
+        </div>
+      </div>
+
+      <!-- CSS customizado -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">💻 CSS personalizado</span>
+        </div>
+        <div class="card-body">
+          <div class="form-group">
+            <textarea name="custom_css" class="form-control" rows="6"
+                      style="font-family:monospace;font-size:.8125rem"
+                      placeholder="/* Estilos extras aplicados em todas as páginas */">{{ s.custom_css or '' }}</textarea>
+            <span class="form-hint">Avançado — sobrescreve o tema padrão.</span>
+          </div>
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-primary btn-lg" style="align-self:flex-start">
+        💾 Salvar configurações
+      </button>
+    </div>
+  </form>
+
+</div>
+
+<script>
+  // Sincroniza color picker com o campo de texto
+  document.querySelectorAll('input[type=color]').forEach(picker => {
+    picker.addEventListener('input', () => {
+      picker.nextElementSibling.value = picker.value
+    })
+  })
+</script>
+{% endblock %}

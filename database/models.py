@@ -4,6 +4,50 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from database import db
 
 
+class Tenant(db.Model):
+    __tablename__ = 'tenants'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    slug = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    custom_domain = db.Column(db.String(255), unique=True, nullable=True)
+    db_url = db.Column(db.String(500), nullable=True)
+    plan = db.Column(db.String(50), default='basic')
+    active_modules = db.Column(db.String(255), default='clinica')
+    is_active = db.Column(db.Boolean, default=True)
+    trial_ends_at    = db.Column(db.DateTime, nullable=True)
+    demo_expires_at  = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def has_module(self, module: str) -> bool:
+        return module in (self.active_modules or '').split(',')
+
+    def __repr__(self):
+        return f'<Tenant {self.slug}>'
+
+
+class TenantSettings(db.Model):
+    __tablename__ = 'tenant_settings'
+    id = db.Column(db.Integer, primary_key=True)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id', ondelete='CASCADE'),
+                          unique=True, nullable=False)
+    company_name    = db.Column(db.String(200), default='Consultório')
+    tagline         = db.Column(db.String(300))
+    logo_url        = db.Column(db.String(500))
+    favicon_url     = db.Column(db.String(500))
+    primary_color   = db.Column(db.String(7), default='#4F46E5')
+    secondary_color = db.Column(db.String(7), default='#06B6D4')
+    bg_dark         = db.Column(db.String(7), default='#0F172A')
+    whatsapp        = db.Column(db.String(20))
+    support_email   = db.Column(db.String(150))
+    address         = db.Column(db.String(300))
+    footer_text     = db.Column(db.String(500))
+    custom_css      = db.Column(db.Text)
+    updated_at      = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    tenant = db.relationship('Tenant', backref=db.backref('settings', uselist=False,
+                             cascade='all, delete-orphan'))
+
+
 class User(UserMixin, db.Model):
     __tablename__ = "users"
 
@@ -14,7 +58,7 @@ class User(UserMixin, db.Model):
     cpf = db.Column(db.String(14), unique=True)
     birth_date = db.Column(db.Date)
     password_hash = db.Column(db.String(256), nullable=False)
-    role = db.Column(db.String(20), default="patient")  # patient | admin | professional
+    role = db.Column(db.String(20), default="patient")  # patient | admin | professional | superadmin
     is_active = db.Column(db.Boolean, default=True)
     avatar = db.Column(db.String(255))
     whatsapp = db.Column(db.String(20))
@@ -24,9 +68,11 @@ class User(UserMixin, db.Model):
     observations = db.Column(db.Text)
     reset_token = db.Column(db.String(100))
     reset_token_expiry = db.Column(db.DateTime)
+    is_demo = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     last_login = db.Column(db.DateTime)
+    tenant_id = db.Column(db.Integer, db.ForeignKey('tenants.id'), nullable=True, index=True)
 
     appointments = db.relationship("Appointment", foreign_keys="Appointment.patient_id", backref="patient", lazy="dynamic")
     documents = db.relationship("Document", foreign_keys="Document.user_id", backref="owner", lazy="dynamic")
@@ -40,7 +86,7 @@ class User(UserMixin, db.Model):
         return check_password_hash(self.password_hash, password)
 
     def is_admin(self):
-        return self.role in ("admin",)
+        return self.role in ('admin', 'superadmin')
 
     def is_professional(self):
         return self.role in ("professional", "admin")
@@ -54,6 +100,7 @@ class User(UserMixin, db.Model):
             "cpf": self.cpf,
             "role": self.role,
             "is_active": self.is_active,
+            "tenant_id": self.tenant_id,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 

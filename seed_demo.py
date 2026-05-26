@@ -25,7 +25,13 @@ NOMES_FEMININOS = [
     "Flávia Nogueira Vieira", "Giovana Cunha Medeiros", "Helena Batista Reis",
     "Ingrid Carvalho Campos", "Jéssica Almeida Teixeira", "Karina Neves Guimarães",
     "Lígia Fontes Macedo", "Mônica Duarte Rodrigues", "Natália Paiva Leal",
-    "Odete Magalhães Costa",
+    "Odete Magalhães Costa", "Priscila Viana Bezerra", "Queila Ramos Dantas",
+    "Regina Lúcia Ferraz", "Sandra Melo Queiroz", "Tânia Cristina Lopes",
+    "Úrsula Figueiredo Braga", "Vera Lúcia Santana", "Waleska Campos Sena",
+    "Yara Cristine Peixoto", "Zilda Aparecida Gomes", "Alice Moreira Brandão",
+    "Brenda Cavalcanti Lima", "Clara Regina Assunção", "Diana Ferreira Siqueira",
+    "Elaine Cristina Barros", "Fabiana Rocha Salomão", "Graça Aparecida Tavares",
+    "Heloísa Mota Feitosa", "Íris Dantas Carvalho", "Joelma Correia Pinto",
 ]
 
 TELEFONES = [
@@ -36,7 +42,12 @@ TELEFONES = [
     "(85) 98765-7913", "(85) 97654-8024", "(91) 98765-9135", "(91) 97654-0246",
     "(19) 98765-1111", "(19) 97654-2222", "(47) 98765-3333", "(47) 97654-4444",
     "(48) 98765-5555", "(48) 97654-6666", "(27) 98765-7777", "(27) 97654-8888",
-    "(28) 98765-9999", "(28) 97654-0000",
+    "(28) 98765-9999", "(28) 97654-0000", "(62) 98765-1010", "(62) 97654-2020",
+    "(63) 98765-3030", "(63) 97654-4040", "(65) 98765-5050", "(65) 97654-6060",
+    "(67) 98765-7070", "(67) 97654-8080", "(68) 98765-9090", "(68) 97654-0101",
+    "(69) 98765-1212", "(69) 97654-2323", "(73) 98765-3434", "(73) 97654-4545",
+    "(74) 98765-5656", "(74) 97654-6767", "(75) 98765-7878", "(75) 97654-8989",
+    "(77) 98765-9191", "(77) 97654-0202",
 ]
 
 TIPOS_SANGUE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"]

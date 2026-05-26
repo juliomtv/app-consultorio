@@ -1,0 +1,28 @@
+name: Deploy App Consultorio
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H 216.238.113.121 >> ~/.ssh/known_hosts
+
+      - name: Deploy e reiniciar
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no root@216.238.113.121 '
+            set -e
+            cd /opt/app-consultorio
+            git fetch origin master
+            git reset --hard origin/master
+            systemctl restart app-consultorio
+            echo "✓ App Consultorio atualizado"
+          '

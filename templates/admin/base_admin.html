@@ -3,15 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#4F46E5">
-  <title>{% block title %}Admin{% endblock %} — Consultório Admin</title>
+  <meta name="theme-color" content="{{ branding.primary }}">
+  <title>{% block title %}Admin{% endblock %} — {{ branding.company_name }}</title>
 
   <link rel="manifest" href="/static/manifest.json">
+  {% if branding.favicon_url %}
+  <link rel="icon" type="image/png" href="{{ branding.favicon_url }}">
+  {% else %}
   <link rel="icon" type="image/png" href="/static/icons/icon-96.png">
+  {% endif %}
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/css/main.css">
   <link rel="stylesheet" href="/static/css/admin.css">
+  <style>
+    :root {
+      --primary: {{ branding.primary }};
+      --secondary: {{ branding.secondary }};
+    }
+    {{ branding.custom_css }}
+  </style>
   {% block extra_css %}{% endblock %}
 </head>
 <body>
@@ -21,9 +32,15 @@
 <!-- SIDEBAR ADMIN -->
 <aside class="sidebar admin-sidebar" id="sidebar">
   <a href="{{ url_for('admin.dashboard') }}" class="sidebar-brand">
-    <div class="sidebar-brand-icon" style="background:linear-gradient(135deg,#1E1B4B,#4338CA)">⚙</div>
+    <div class="sidebar-brand-icon" style="background:linear-gradient(135deg,#1E1B4B,#4338CA)">
+      {% if branding.logo_url %}
+      <img src="{{ branding.logo_url }}" alt="{{ branding.company_name }}" style="width:32px;height:32px;object-fit:contain;border-radius:6px">
+      {% else %}
+      ⚙
+      {% endif %}
+    </div>
     <div>
-      <div class="sidebar-brand-name">Consultório</div>
+      <div class="sidebar-brand-name">{{ branding.company_name }}</div>
       <div class="sidebar-brand-sub">Painel Administrativo</div>
     </div>
   </a>
@@ -84,6 +101,11 @@
       <span class="nav-icon">📋</span> Logs
     </a>
 
+    <a href="{{ url_for('admin.settings') }}"
+       class="nav-item {% if request.endpoint == 'admin.settings' %}active{% endif %}">
+      <span class="nav-icon">⚙️</span> Configurações
+    </a>
+
     <a href="{{ url_for('auth.logout') }}" class="nav-item" style="color:var(--danger)">
       <span class="nav-icon">⎋</span> Sair
     </a>
@@ -113,7 +135,7 @@
           <span class="search-icon">🔍</span>
           <input type="text" placeholder="Buscar paciente..." id="patientLiveSearch" autocomplete="off">
         </div>
-        <div id="searchResults" class="dropdown-menu" style="display:none;position:absolute;top:calc(100%+4px);left:0;min-width:280px;z-index:500"></div>
+        <div id="searchResults" class="dropdown-menu" style="position:absolute;top:calc(100%+4px);left:0;min-width:280px;z-index:500"></div>
       </div>
 
       {% block topbar_actions %}{% endblock %}

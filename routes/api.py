@@ -1,10 +1,12 @@
-"""API REST v1 — consumida pelo frontend JS e futuramente pelo app mobile."""
+"""API REST v1 — consumida pelo frontend JS."""
+import jwt as pyjwt
 from datetime import datetime, date, timedelta
-from flask import Blueprint, jsonify, request
+from datetime import datetime as _dt
+from functools import wraps
+from flask import Blueprint, jsonify, request, current_app, g
 from flask_login import login_required, current_user
 from database import db
-from database.models import (Appointment, Professional, Schedule, Notification,
-                              ContractionSession, Contraction, User)
+from database.models import Appointment, Professional, Schedule, User
 
 api_bp = Blueprint("api", __name__)
 
@@ -16,6 +18,61 @@ def api_response(data=None, message="ok", status=200, error=None):
     if error:
         payload["error"] = error
     return jsonify(payload), status
+
+
+def jwt_or_login_required(f):
+    """Accepts a valid JWT Bearer token OR an active Flask-Login session."""
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth = request.headers.get('Authorization', '')
+        if auth.startswith('Bearer '):
+            token = auth[7:]
+            try:
+                payload = pyjwt.decode(
+                    token,
+                    current_app.config['SECRET_KEY'],
+                    algorithms=['HS256']
+                )
+                user = User.query.get(payload['sub'])
+                if not user or not user.is_active:
+                    return api_response(error='Token inválido', status=401)
+                g._jwt_user = user
+            except pyjwt.ExpiredSignatureError:
+                return api_response(error='Token expirado', status=401)
+            except Exception:
+                return api_response(error='Token inválido', status=401)
+        else:
+            if not current_user.is_authenticated:
+                return api_response(error='Autenticação necessária', status=401)
+        return f(*args, **kwargs)
+    return decorated
+
+
+# ─── AUTH TOKEN ──────────────────────────────────────────────────────────────
+
+@api_bp.route('/auth/token', methods=['POST'])
+def get_token():
+    """Issue a JWT for API clients."""
+    data     = request.get_json() or {}
+    email    = data.get('email', '').strip().lower()
+    password = data.get('password', '')
+
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.check_password(password) or not user.is_active:
+        return api_response(error='Credenciais inválidas', status=401)
+    if user.role == 'patient':
+        return api_response(error='Acesso não permitido', status=403)
+
+    payload = {
+        'sub':       user.id,
+        'email':     user.email,
+        'role':      user.role,
+        'tenant_id': user.tenant_id,
+        'exp':       _dt.utcnow() + timedelta(hours=24),
+        'iat':       _dt.utcnow(),
+    }
+    token = pyjwt.encode(payload, current_app.config['SECRET_KEY'], algorithm='HS256')
+    return api_response({'token': token, 'expires_in': 86400, 'user': user.to_dict()}, status=200)
 
 
 # ─── HORÁRIOS DISPONÍVEIS ────────────────────────────────────────────────────
@@ -73,102 +130,6 @@ def _generate_slots(start, end, duration):
     return slots
 
 
-# ─── NOTIFICAÇÕES ────────────────────────────────────────────────────────────
-
-@api_bp.route("/notificacoes")
-@login_required
-def notifications():
-    notifs = (Notification.query
-              .filter_by(user_id=current_user.id)
-              .order_by(Notification.created_at.desc())
-              .limit(20).all())
-    return api_response([n.to_dict() for n in notifs])
-
-
-@api_bp.route("/notificacoes/nao-lidas")
-@login_required
-def unread_count():
-    count = Notification.query.filter_by(user_id=current_user.id, is_read=False).count()
-    return api_response({"count": count})
-
-
-@api_bp.route("/notificacoes/<int:notif_id>/lida", methods=["POST"])
-@login_required
-def mark_read(notif_id):
-    notif = Notification.query.filter_by(id=notif_id, user_id=current_user.id).first_or_404()
-    notif.is_read = True
-    db.session.commit()
-    return api_response(message="Marcado como lido")
-
-
-# ─── CONTRAÇÕES ──────────────────────────────────────────────────────────────
-
-@api_bp.route("/contracoes/sessao", methods=["POST"])
-@login_required
-def start_contraction_session():
-    session = ContractionSession(user_id=current_user.id)
-    db.session.add(session)
-    db.session.commit()
-    return api_response({"session_id": session.id}, "Sessão iniciada", 201)
-
-
-@api_bp.route("/contracoes/sessao/<int:session_id>/encerrar", methods=["POST"])
-@login_required
-def end_contraction_session(session_id):
-    session = ContractionSession.query.filter_by(
-        id=session_id, user_id=current_user.id).first_or_404()
-    session.ended_at = datetime.utcnow()
-    session.notes = request.json.get("notes", "") if request.is_json else ""
-
-    contractions = session.contractions.all()
-    session.total_contractions = len(contractions)
-    if contractions:
-        durations = [c.duration for c in contractions if c.duration]
-        intervals = [c.interval for c in contractions if c.interval]
-        session.avg_duration = sum(durations) / len(durations) if durations else None
-        session.avg_interval = sum(intervals) / len(intervals) if intervals else None
-
-    db.session.commit()
-    return api_response(session.to_dict())
-
-
-@api_bp.route("/contracoes/sessao/<int:session_id>/registrar", methods=["POST"])
-@login_required
-def register_contraction(session_id):
-    session = ContractionSession.query.filter_by(
-        id=session_id, user_id=current_user.id).first_or_404()
-
-    data = request.get_json() or {}
-    started_at = datetime.fromisoformat(data.get("started_at", datetime.utcnow().isoformat()))
-    ended_at_str = data.get("ended_at")
-    ended_at = datetime.fromisoformat(ended_at_str) if ended_at_str else None
-    duration = data.get("duration")
-    interval = data.get("interval")
-
-    contraction = Contraction(
-        session_id=session_id,
-        started_at=started_at,
-        ended_at=ended_at,
-        duration=duration,
-        interval=interval,
-        intensity=data.get("intensity"),
-    )
-    db.session.add(contraction)
-    db.session.commit()
-    return api_response(contraction.to_dict(), status=201)
-
-
-@api_bp.route("/contracoes/sessao/<int:session_id>")
-@login_required
-def get_session(session_id):
-    session = ContractionSession.query.filter_by(
-        id=session_id, user_id=current_user.id).first_or_404()
-    contractions = [c.to_dict() for c in session.contractions.order_by(Contraction.started_at).all()]
-    result = session.to_dict()
-    result["contractions"] = contractions
-    return api_response(result)
-
-
 # ─── PROFISSIONAIS ────────────────────────────────────────────────────────────
 
 @api_bp.route("/profissionais")
@@ -176,20 +137,6 @@ def get_session(session_id):
 def professionals_list():
     profs = Professional.query.filter_by(is_active=True).all()
     return api_response([p.to_dict() for p in profs])
-
-
-# ─── CONSULTAS ───────────────────────────────────────────────────────────────
-
-@api_bp.route("/consultas/proximas")
-@login_required
-def upcoming_appointments():
-    appts = (Appointment.query
-             .filter_by(patient_id=current_user.id)
-             .filter(Appointment.date >= date.today())
-             .filter(Appointment.status.in_(["scheduled", "confirmed"]))
-             .order_by(Appointment.date, Appointment.time)
-             .limit(5).all())
-    return api_response([a.to_dict() for a in appts])
 
 
 # ─── BUSCA DE PACIENTES (admin) ───────────────────────────────────────────────
