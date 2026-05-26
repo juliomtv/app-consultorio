@@ -46,50 +46,54 @@ def provision():
     if not slug or not admin_email or not admin_password:
         return _resp(error='slug, admin_email e admin_password são obrigatórios', status=400)
 
-    # Tenant — cria ou atualiza
-    tenant = Tenant.query.filter_by(slug=slug).first()
-    if not tenant:
-        tenant = Tenant(slug=slug)
-        db.session.add(tenant)
-    tenant.name          = name
-    tenant.plan          = plan
-    tenant.custom_domain = custom_domain
-    tenant.active_modules = modules
-    tenant.is_active     = True
-    db.session.flush()
+    try:
+        # Tenant — cria ou atualiza
+        tenant = Tenant.query.filter_by(slug=slug).first()
+        if not tenant:
+            tenant = Tenant(slug=slug)
+            db.session.add(tenant)
+        tenant.name           = name
+        tenant.plan           = plan
+        tenant.custom_domain  = custom_domain
+        tenant.active_modules = modules
+        tenant.is_active      = True
+        db.session.flush()
 
-    # TenantSettings
-    s = TenantSettings.query.filter_by(tenant_id=tenant.id).first()
-    if not s:
-        s = TenantSettings(tenant_id=tenant.id)
-        db.session.add(s)
-    s.company_name = settings_data.get('company_name', name)
-    for key in _SETTINGS_KEYS:
-        if key in settings_data and key != 'company_name':
-            setattr(s, key, settings_data[key] or None)
+        # TenantSettings
+        s = TenantSettings.query.filter_by(tenant_id=tenant.id).first()
+        if not s:
+            s = TenantSettings(tenant_id=tenant.id)
+            db.session.add(s)
+        s.company_name = settings_data.get('company_name', name)
+        for key in _SETTINGS_KEYS:
+            if key in settings_data and key != 'company_name':
+                setattr(s, key, settings_data[key] or None)
 
-    # Admin user — busca pelo tenant primeiro, depois pelo e-mail
-    admin = User.query.filter_by(email=admin_email, tenant_id=tenant.id).first()
-    if not admin:
-        # Se e-mail já existe em outro tenant, cria com e-mail único por tenant
-        other = User.query.filter_by(email=admin_email).first()
-        effective_email = f"{admin_email}+{tenant.slug}" if other else admin_email
-        admin = User(
-            name='Administrador',
-            email=effective_email,
-            role='admin',
-            is_active=True,
-            tenant_id=tenant.id,
-        )
-        admin.set_password(admin_password)
-        db.session.add(admin)
-    else:
-        admin.set_password(admin_password)
-        admin.role      = 'admin'
-        admin.is_active = True
+        # Admin user — busca pelo tenant primeiro, depois pelo e-mail
+        admin = User.query.filter_by(email=admin_email, tenant_id=tenant.id).first()
+        if not admin:
+            other = User.query.filter_by(email=admin_email).first()
+            effective_email = f"{admin_email}+{tenant.slug}" if other else admin_email
+            admin = User(
+                name='Administrador',
+                email=effective_email,
+                role='admin',
+                is_active=True,
+                tenant_id=tenant.id,
+            )
+            admin.set_password(admin_password)
+            db.session.add(admin)
+        else:
+            admin.set_password(admin_password)
+            admin.role      = 'admin'
+            admin.is_active = True
 
-    db.session.commit()
-    return _resp({'tenant_id': tenant.id, 'slug': tenant.slug})
+        db.session.commit()
+        return _resp({'tenant_id': tenant.id, 'slug': tenant.slug})
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f'[PROVISION] {e}')
+        return _resp(error=str(e), status=500)
 
 
 @internal_bp.route('/tenant/<slug>/settings', methods=['PUT'])
