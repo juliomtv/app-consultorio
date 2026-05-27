@@ -5,7 +5,6 @@ from datetime import datetime as _dt
 from functools import wraps
 from flask import Blueprint, jsonify, request, current_app, g
 from flask_login import login_required, current_user
-from database import db
 from database.models import Appointment, Professional, Schedule, User
 
 api_bp = Blueprint("api", __name__)
@@ -33,7 +32,7 @@ def jwt_or_login_required(f):
                     current_app.config['SECRET_KEY'],
                     algorithms=['HS256']
                 )
-                user = User.query.get(payload['sub'])
+                user = g.db.query(User).get(payload['sub']) if g.db else None
                 if not user or not user.is_active:
                     return api_response(error='Token inválido', status=401)
                 g._jwt_user = user
@@ -57,19 +56,18 @@ def get_token():
     email    = data.get('email', '').strip().lower()
     password = data.get('password', '')
 
-    user = User.query.filter_by(email=email).first()
+    user = g.db.query(User).filter_by(email=email).first() if g.db else None
     if not user or not user.check_password(password) or not user.is_active:
         return api_response(error='Credenciais inválidas', status=401)
     if user.role == 'patient':
         return api_response(error='Acesso não permitido', status=403)
 
     payload = {
-        'sub':       user.id,
-        'email':     user.email,
-        'role':      user.role,
-        'tenant_id': user.tenant_id,
-        'exp':       _dt.utcnow() + timedelta(hours=24),
-        'iat':       _dt.utcnow(),
+        'sub':   user.id,
+        'email': user.email,
+        'role':  user.role,
+        'exp':   _dt.utcnow() + timedelta(hours=24),
+        'iat':   _dt.utcnow(),
     }
     token = pyjwt.encode(payload, current_app.config['SECRET_KEY'], algorithm='HS256')
     return api_response({'token': token, 'expires_in': 86400, 'user': user.to_dict()}, status=200)
@@ -81,7 +79,7 @@ def get_token():
 @login_required
 def available_slots():
     professional_id = request.args.get("professional_id", type=int)
-    date_str = request.args.get("date")
+    date_str        = request.args.get("date")
 
     if not professional_id or not date_str:
         return api_response(error="professional_id e date são obrigatórios", status=400)
@@ -94,25 +92,26 @@ def available_slots():
     if target_date < date.today():
         return api_response([], "Nenhum horário disponível")
 
-    day_of_week = target_date.weekday()  # 0=Mon
-    schedule = Schedule.query.filter_by(
-        professional_id=professional_id,
-        day_of_week=day_of_week,
-        is_active=True
-    ).first()
+    day_of_week = target_date.weekday()
+    schedule = (g.db.query(Schedule)
+                .filter_by(professional_id=professional_id,
+                           day_of_week=day_of_week,
+                           is_active=True)
+                .first()) if g.db else None
 
-    # Se não há agenda cadastrada, usa horário padrão 08:00–18:00
     if schedule:
         start_t, end_t, slot_dur = schedule.start_time, schedule.end_time, schedule.slot_duration
     else:
         start_t, end_t, slot_dur = "08:00", "18:00", 30
 
-    booked = {a.time for a in Appointment.query.filter_by(
-        professional_id=professional_id,
-        date=target_date,
-    ).filter(Appointment.status.in_(["scheduled", "confirmed"])).all()}
+    booked = set()
+    if g.db:
+        booked = {a.time for a in g.db.query(Appointment)
+                  .filter_by(professional_id=professional_id, date=target_date)
+                  .filter(Appointment.status.in_(["scheduled", "confirmed"]))
+                  .all()}
 
-    slots = _generate_slots(start_t, end_t, slot_dur)
+    slots     = _generate_slots(start_t, end_t, slot_dur)
     available = [s for s in slots if s not in booked]
 
     return api_response(available)
@@ -120,9 +119,9 @@ def available_slots():
 
 def _generate_slots(start, end, duration):
     slots = []
-    h, m = map(int, start.split(":"))
+    h, m   = map(int, start.split(":"))
     eh, em = map(int, end.split(":"))
-    current = h * 60 + m
+    current     = h * 60 + m
     end_minutes = eh * 60 + em
     while current + duration <= end_minutes:
         slots.append(f"{current // 60:02d}:{current % 60:02d}")
@@ -135,7 +134,7 @@ def _generate_slots(start, end, duration):
 @api_bp.route("/profissionais")
 @login_required
 def professionals_list():
-    profs = Professional.query.filter_by(is_active=True).all()
+    profs = g.db.query(Professional).filter_by(is_active=True).all() if g.db else []
     return api_response([p.to_dict() for p in profs])
 
 
@@ -146,11 +145,14 @@ def professionals_list():
 def search_patients():
     if not current_user.is_admin():
         return api_response(error="Acesso negado", status=403)
-    q = request.args.get("q", "")
-    patients = User.query.filter(
-        User.role == "patient",
-        (User.name.ilike(f"%{q}%")) | (User.email.ilike(f"%{q}%"))
-    ).limit(10).all()
+    q        = request.args.get("q", "")
+    patients = (g.db.query(User)
+                .filter(
+                    User.role == "patient",
+                    (User.name.ilike(f"%{q}%")) | (User.email.ilike(f"%{q}%"))
+                )
+                .limit(10)
+                .all()) if g.db else []
     return api_response([{"id": p.id, "name": p.name, "email": p.email} for p in patients])
 
 

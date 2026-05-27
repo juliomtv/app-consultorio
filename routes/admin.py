@@ -2,55 +2,17 @@ import os
 from datetime import datetime, date, timedelta
 from functools import wraps
 from flask import (Blueprint, render_template, redirect, url_for, flash,
-                   request, current_app, send_from_directory, jsonify, g as _g)
+                   request, current_app, send_from_directory, jsonify, g, abort)
 from flask_login import login_required, current_user
 from sqlalchemy import func, extract
-from database import db
 from database.models import (User, Professional, Appointment, Document,
                               LibraryItem, Notification, FinancialTransaction,
                               Schedule, SystemLog, AppointmentHistory,
                               HealthPlan, InsuranceGuide)
+from database.tenant_db import paginate as _paginate
 from werkzeug.utils import secure_filename
 
 admin_bp = Blueprint("admin", __name__)
-
-
-def _tid():
-    """Returns the current tenant_id from request context, or None."""
-    return getattr(_g, 'tenant_id', None)
-
-
-def _appt_base():
-    """Appointment query scoped to the current tenant."""
-    tid = _tid()
-    if not tid:
-        return Appointment.query
-    prof_sub = db.session.query(Professional.id).join(
-        User, Professional.user_id == User.id
-    ).filter(User.tenant_id == tid)
-    return Appointment.query.filter(Appointment.professional_id.in_(prof_sub))
-
-
-def _profs_q(active_only=True):
-    """Professional query scoped to the current tenant."""
-    tid = _tid()
-    q = Professional.query.join(User, Professional.user_id == User.id)
-    if active_only:
-        q = q.filter(Professional.is_active == True)
-    if tid:
-        q = q.filter(User.tenant_id == tid)
-    return q
-
-
-def _trans_base():
-    """FinancialTransaction query scoped to the current tenant (via created_by user)."""
-    tid = _tid()
-    if not tid:
-        return FinancialTransaction.query
-    user_sub = db.session.query(User.id).filter(User.tenant_id == tid)
-    return FinancialTransaction.query.filter(
-        FinancialTransaction.created_by.in_(user_sub)
-    )
 
 
 def admin_required(f):
@@ -81,8 +43,15 @@ def log_action(action, entity=None, entity_id=None, details=None, status="succes
         user_agent=request.headers.get("User-Agent", "")[:255],
         status=status,
     )
-    db.session.add(log)
-    db.session.commit()
+    g.db.add(log)
+    g.db.commit()
+
+
+def _get_or_404(model, id):
+    obj = g.db.query(model).get(id)
+    if obj is None:
+        abort(404)
+    return obj
 
 
 # ─── DASHBOARD ─────────────────────────────────────────────────────────────
@@ -91,40 +60,32 @@ def log_action(action, entity=None, entity_id=None, details=None, status="succes
 @login_required
 @admin_required
 def dashboard():
-    today = date.today()
+    today       = date.today()
     month_start = today.replace(day=1)
-    tid = _tid()
 
-    base_patient_q = User.query.filter_by(role="patient")
-    if tid:
-        base_patient_q = base_patient_q.filter_by(tenant_id=tid)
+    appt_q    = g.db.query(Appointment)
+    patient_q = g.db.query(User).filter_by(role="patient")
+    trans_q   = g.db.query(FinancialTransaction)
 
-    appts = _appt_base()
     stats = {
-        "total_patients": base_patient_q.count(),
-        "total_appointments": appts.count(),
-        "today_appointments": appts.filter_by(date=today).count(),
-        "month_appointments": appts.filter(Appointment.date >= month_start).count(),
-        "pending_appointments": appts.filter_by(status="scheduled").count(),
-        "month_revenue": _trans_base().filter(
-            FinancialTransaction.type == "income",
+        "total_patients":      patient_q.count(),
+        "total_appointments":  appt_q.count(),
+        "today_appointments":  appt_q.filter_by(date=today).count(),
+        "month_appointments":  appt_q.filter(Appointment.date >= month_start).count(),
+        "pending_appointments": appt_q.filter_by(status="scheduled").count(),
+        "month_revenue": trans_q.filter(
+            FinancialTransaction.type   == "income",
             FinancialTransaction.status == "paid",
             FinancialTransaction.paid_at >= month_start,
         ).with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
-        "new_patients_month": base_patient_q.filter(
-            User.created_at >= month_start
-        ).count(),
+        "new_patients_month": patient_q.filter(User.created_at >= month_start).count(),
     }
 
-    today_appts = (_appt_base()
-                   .filter_by(date=today)
+    today_appts = (appt_q.filter_by(date=today)
                    .order_by(Appointment.time)
                    .all())
 
-    recent_q = User.query.filter_by(role="patient")
-    if tid:
-        recent_q = recent_q.filter_by(tenant_id=tid)
-    recent_patients = recent_q.order_by(User.created_at.desc()).limit(5).all()
+    recent_patients = (patient_q.order_by(User.created_at.desc()).limit(5).all())
 
     monthly_data = _get_monthly_chart_data()
 
@@ -137,13 +98,14 @@ def dashboard():
 
 def _get_monthly_chart_data():
     today = date.today()
-    data = []
+    data  = []
     for i in range(6):
-        month = (today.replace(day=1) - timedelta(days=i * 30))
-        count = _appt_base().filter(
-            extract("month", Appointment.date) == month.month,
-            extract("year", Appointment.date) == month.year
-        ).count()
+        month = today.replace(day=1) - timedelta(days=i * 30)
+        count = (g.db.query(Appointment)
+                 .filter(
+                     extract("month", Appointment.date) == month.month,
+                     extract("year",  Appointment.date) == month.year,
+                 ).count())
         data.append({"month": month.strftime("%b/%y"), "count": count})
     return list(reversed(data))
 
@@ -155,21 +117,18 @@ def _get_monthly_chart_data():
 @admin_required
 def patients():
     search = request.args.get("q", "")
-    page = request.args.get("page", 1, type=int)
-    tid = _tid()
-    query = User.query.filter_by(role="patient")
-    if tid:
-        query = query.filter_by(tenant_id=tid)
+    page   = request.args.get("page", 1, type=int)
 
+    query = g.db.query(User).filter_by(role="patient")
     if search:
         query = query.filter(
-            (User.name.ilike(f"%{search}%")) |
+            (User.name.ilike(f"%{search}%"))  |
             (User.email.ilike(f"%{search}%")) |
-            (User.cpf.ilike(f"%{search}%")) |
+            (User.cpf.ilike(f"%{search}%"))   |
             (User.phone.ilike(f"%{search}%"))
         )
 
-    patients_page = query.order_by(User.name).paginate(page=page, per_page=20)
+    patients_page = _paginate(query.order_by(User.name), page, 20)
     return render_template("admin/patients.html",
                            patients=patients_page, search=search)
 
@@ -178,12 +137,14 @@ def patients():
 @login_required
 @admin_required
 def patient_detail(patient_id):
-    patient = User.query.filter_by(id=patient_id, role="patient").first_or_404()
-    appointments = (Appointment.query
+    patient = g.db.query(User).filter_by(id=patient_id, role="patient").first()
+    if not patient:
+        abort(404)
+    appointments = (g.db.query(Appointment)
                     .filter_by(patient_id=patient_id)
                     .order_by(Appointment.date.desc())
                     .all())
-    documents = (Document.query
+    documents = (g.db.query(Document)
                  .filter_by(user_id=patient_id)
                  .order_by(Document.created_at.desc())
                  .all())
@@ -197,26 +158,26 @@ def patient_detail(patient_id):
 @admin_required
 def new_patient():
     if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        phone = request.form.get("phone", "")
-        cpf = request.form.get("cpf", "")
+        name           = request.form.get("name", "").strip()
+        email          = request.form.get("email", "").strip().lower()
+        phone          = request.form.get("phone", "")
+        cpf            = request.form.get("cpf", "")
         birth_date_str = request.form.get("birth_date", "")
 
-        if User.query.filter_by(email=email).first():
+        if g.db.query(User).filter_by(email=email).first():
             flash("E-mail já cadastrado.", "danger")
             return render_template("admin/patient_form.html")
 
         user = User(name=name, email=email, phone=phone,
-                    cpf=cpf or None, role="patient", tenant_id=_tid())
+                    cpf=cpf or None, role="patient")
         user.set_password(secrets_token())
         if birth_date_str:
             try:
                 user.birth_date = datetime.strptime(birth_date_str, "%Y-%m-%d").date()
             except ValueError:
                 pass
-        db.session.add(user)
-        db.session.commit()
+        g.db.add(user)
+        g.db.commit()
         log_action("create_patient", "user", user.id, f"Novo paciente: {name}")
         flash("Paciente cadastrado com sucesso!", "success")
         return redirect(url_for("admin.patients"))
@@ -228,19 +189,19 @@ def new_patient():
 @login_required
 @admin_required
 def edit_patient(patient_id):
-    patient = User.query.filter_by(id=patient_id).first_or_404()
+    patient = _get_or_404(User, patient_id)
 
     if request.method == "POST":
-        patient.name = request.form.get("name", patient.name).strip()
-        patient.phone = request.form.get("phone", patient.phone)
-        patient.whatsapp = request.form.get("whatsapp", patient.whatsapp)
-        patient.cpf = request.form.get("cpf", patient.cpf) or None
-        patient.address = request.form.get("address", patient.address)
-        patient.blood_type = request.form.get("blood_type", patient.blood_type)
-        patient.allergies = request.form.get("allergies", patient.allergies)
+        patient.name         = request.form.get("name",         patient.name).strip()
+        patient.phone        = request.form.get("phone",        patient.phone)
+        patient.whatsapp     = request.form.get("whatsapp",     patient.whatsapp)
+        patient.cpf          = request.form.get("cpf",          patient.cpf) or None
+        patient.address      = request.form.get("address",      patient.address)
+        patient.blood_type   = request.form.get("blood_type",   patient.blood_type)
+        patient.allergies    = request.form.get("allergies",    patient.allergies)
         patient.observations = request.form.get("observations", patient.observations)
-        patient.is_active = request.form.get("is_active") == "on"
-        db.session.commit()
+        patient.is_active    = request.form.get("is_active") == "on"
+        g.db.commit()
         log_action("edit_patient", "user", patient_id, f"Editou: {patient.name}")
         flash("Paciente atualizado!", "success")
         return redirect(url_for("admin.patient_detail", patient_id=patient_id))
@@ -254,7 +215,10 @@ def edit_patient(patient_id):
 @login_required
 @admin_required
 def professionals():
-    profs = _profs_q(active_only=False).filter(User.is_active == True).all()
+    profs = (g.db.query(Professional)
+             .join(User, Professional.user_id == User.id)
+             .filter(User.is_active == True)
+             .all())
     return render_template("admin/professionals.html", professionals=profs)
 
 
@@ -263,25 +227,25 @@ def professionals():
 @admin_required
 def new_professional():
     if request.method == "POST":
-        name = request.form.get("name", "").strip()
-        email = request.form.get("email", "").strip().lower()
-        specialty = request.form.get("specialty", "")
-        council_type = request.form.get("council_type", "")
+        name           = request.form.get("name", "").strip()
+        email          = request.form.get("email", "").strip().lower()
+        specialty      = request.form.get("specialty", "")
+        council_type   = request.form.get("council_type", "")
         council_number = request.form.get("council_number", "")
 
-        if User.query.filter_by(email=email).first():
+        if g.db.query(User).filter_by(email=email).first():
             flash("E-mail já cadastrado.", "danger")
             return render_template("admin/professional_form.html")
 
-        user = User(name=name, email=email, role="professional", tenant_id=_tid())
+        user = User(name=name, email=email, role="professional")
         user.set_password(secrets_token())
-        db.session.add(user)
-        db.session.flush()
+        g.db.add(user)
+        g.db.flush()
 
         prof = Professional(user_id=user.id, specialty=specialty,
                             council_type=council_type, council_number=council_number)
-        db.session.add(prof)
-        db.session.commit()
+        g.db.add(prof)
+        g.db.commit()
         log_action("create_professional", "professional", prof.id)
         flash("Profissional cadastrado!", "success")
         return redirect(url_for("admin.professionals"))
@@ -298,12 +262,11 @@ def appointments():
     return redirect(url_for("admin.schedule"))
 
 
-
 @admin_bp.route("/consultas/<int:appt_id>/status", methods=["POST"])
 @login_required
 @admin_required
 def update_appointment_status(appt_id):
-    appt = Appointment.query.get_or_404(appt_id)
+    appt       = _get_or_404(Appointment, appt_id)
     new_status = request.form.get("status")
     valid_statuses = ("scheduled", "confirmed", "cancelled", "completed", "no_show")
     if new_status not in valid_statuses:
@@ -326,9 +289,9 @@ def update_appointment_status(appt_id):
             type="success",
             appointment_id=appt.id,
         )
-        db.session.add(notif)
-    db.session.add(history)
-    db.session.commit()
+        g.db.add(notif)
+    g.db.add(history)
+    g.db.commit()
     log_action("update_appointment", "appointment", appt_id, f"Status: {new_status}")
     flash(f"Status atualizado para '{new_status}'.", "success")
     return redirect(request.referrer or url_for("admin.appointments"))
@@ -345,9 +308,12 @@ def schedule():
         selected_date = date.today()
 
     professional_filter = request.args.get("professional_id", "all")
-    professionals = _profs_q().all()
+    professionals = (g.db.query(Professional)
+                     .join(User, Professional.user_id == User.id)
+                     .filter(Professional.is_active == True, User.is_active == True)
+                     .all())
 
-    query = _appt_base().filter_by(date=selected_date)
+    query = g.db.query(Appointment).filter_by(date=selected_date)
     if professional_filter != "all":
         try:
             query = query.filter_by(professional_id=int(professional_filter))
@@ -374,11 +340,11 @@ def schedule():
 @login_required
 @admin_required
 def financial():
-    page = request.args.get("page", 1, type=int)
-    type_filter = request.args.get("type", "all")
+    page         = request.args.get("page", 1, type=int)
+    type_filter  = request.args.get("type", "all")
     month_filter = request.args.get("month", date.today().strftime("%Y-%m"))
 
-    query = _trans_base()
+    query = g.db.query(FinancialTransaction)
     if type_filter != "all":
         query = query.filter_by(type=type_filter)
 
@@ -386,18 +352,20 @@ def financial():
         try:
             y, m = month_filter.split("-")
             query = query.filter(
-                extract("year", FinancialTransaction.created_at) == int(y),
+                extract("year",  FinancialTransaction.created_at) == int(y),
                 extract("month", FinancialTransaction.created_at) == int(m),
             )
         except (ValueError, AttributeError):
             pass
 
-    transactions = query.order_by(FinancialTransaction.created_at.desc()).paginate(page=page, per_page=25)
+    transactions = _paginate(
+        query.order_by(FinancialTransaction.created_at.desc()), page, 25
+    )
 
-    base_totals = _trans_base()
+    base = g.db.query(FinancialTransaction)
     totals = {
-        "income":  base_totals.filter_by(type="income",  status="paid").with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
-        "expense": base_totals.filter_by(type="expense", status="paid").with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
+        "income":  base.filter_by(type="income",  status="paid").with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
+        "expense": base.filter_by(type="expense", status="paid").with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
     }
     totals["balance"] = totals["income"] - totals["expense"]
 
@@ -426,8 +394,8 @@ def new_transaction():
         t.due_date = datetime.strptime(request.form["due_date"], "%Y-%m-%d").date()
     if t.status == "paid":
         t.paid_at = datetime.utcnow()
-    db.session.add(t)
-    db.session.commit()
+    g.db.add(t)
+    g.db.commit()
     flash("Transação registrada!", "success")
     return redirect(url_for("admin.financial"))
 
@@ -438,7 +406,7 @@ def new_transaction():
 @login_required
 @admin_required
 def library():
-    items = LibraryItem.query.order_by(LibraryItem.created_at.desc()).all()
+    items = g.db.query(LibraryItem).order_by(LibraryItem.created_at.desc()).all()
     return render_template("admin/library.html", items=items)
 
 
@@ -455,9 +423,9 @@ def upload_library_item():
         flash("Apenas PDF ou EPUB são permitidos.", "danger")
         return redirect(url_for("admin.library"))
 
-    filename = secure_filename(file.filename)
+    filename    = secure_filename(file.filename)
     unique_name = f"{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{filename}"
-    filepath = os.path.join(current_app.config["LIBRARY_FOLDER"], unique_name)
+    filepath    = os.path.join(current_app.config["LIBRARY_FOLDER"], unique_name)
     file.save(filepath)
 
     item = LibraryItem(
@@ -470,8 +438,8 @@ def upload_library_item():
         is_public=request.form.get("is_public") == "on",
         uploaded_by=current_user.id,
     )
-    db.session.add(item)
-    db.session.commit()
+    g.db.add(item)
+    g.db.commit()
     log_action("upload_library", "library", item.id, f"Upload: {item.title}")
     flash("Material adicionado à biblioteca!", "success")
     return redirect(url_for("admin.library"))
@@ -481,12 +449,12 @@ def upload_library_item():
 @login_required
 @admin_required
 def delete_library_item(item_id):
-    item = LibraryItem.query.get_or_404(item_id)
+    item = _get_or_404(LibraryItem, item_id)
     filepath = os.path.join(current_app.config["LIBRARY_FOLDER"], item.filename)
     if os.path.exists(filepath):
         os.remove(filepath)
-    db.session.delete(item)
-    db.session.commit()
+    g.db.delete(item)
+    g.db.commit()
     flash("Item removido.", "info")
     return redirect(url_for("admin.library"))
 
@@ -495,7 +463,7 @@ def delete_library_item(item_id):
 @login_required
 @admin_required
 def serve_library_file(item_id):
-    item = LibraryItem.query.get_or_404(item_id)
+    item = _get_or_404(LibraryItem, item_id)
     return send_from_directory(current_app.config["LIBRARY_FOLDER"], item.filename)
 
 
@@ -505,12 +473,12 @@ def serve_library_file(item_id):
 @login_required
 @admin_required
 def logs():
-    page = request.args.get("page", 1, type=int)
+    page          = request.args.get("page", 1, type=int)
     action_filter = request.args.get("action", "")
-    query = SystemLog.query
+    query = g.db.query(SystemLog)
     if action_filter:
         query = query.filter(SystemLog.action.ilike(f"%{action_filter}%"))
-    logs_page = query.order_by(SystemLog.created_at.desc()).paginate(page=page, per_page=50)
+    logs_page = _paginate(query.order_by(SystemLog.created_at.desc()), page, 50)
     return render_template("admin/logs.html", logs=logs_page, action_filter=action_filter)
 
 
@@ -520,15 +488,15 @@ def logs():
 @login_required
 @admin_required
 def upload_patient_document(patient_id):
-    patient = User.query.get_or_404(patient_id)
-    file = request.files.get("file")
+    patient = _get_or_404(User, patient_id)
+    file    = request.files.get("file")
     if not file or not allowed_file(file.filename):
         flash("Arquivo inválido.", "danger")
         return redirect(url_for("admin.patient_detail", patient_id=patient_id))
 
-    filename = secure_filename(file.filename)
+    filename    = secure_filename(file.filename)
     unique_name = f"{patient_id}_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{filename}"
-    filepath = os.path.join(current_app.config["DOCUMENTS_FOLDER"], unique_name)
+    filepath    = os.path.join(current_app.config["DOCUMENTS_FOLDER"], unique_name)
     file.save(filepath)
 
     doc = Document(
@@ -542,8 +510,8 @@ def upload_patient_document(patient_id):
         uploaded_by=current_user.id,
         is_visible_to_patient=request.form.get("visible") == "on",
     )
-    db.session.add(doc)
-    db.session.commit()
+    g.db.add(doc)
+    g.db.commit()
     flash("Documento enviado!", "success")
     return redirect(url_for("admin.patient_detail", patient_id=patient_id))
 
@@ -552,7 +520,7 @@ def upload_patient_document(patient_id):
 @login_required
 @admin_required
 def view_document(doc_id):
-    doc = Document.query.get_or_404(doc_id)
+    doc = _get_or_404(Document, doc_id)
     return send_from_directory(current_app.config["DOCUMENTS_FOLDER"], doc.filename)
 
 
@@ -562,19 +530,14 @@ def view_document(doc_id):
 @login_required
 @admin_required
 def send_notification():
-    patient_id = request.form.get("patient_id")
-    title = request.form.get("title")
-    message = request.form.get("message")
-    notif_type = request.form.get("type", "info")
-
     notif = Notification(
-        user_id=patient_id,
-        title=title,
-        message=message,
-        type=notif_type,
+        user_id=request.form.get("patient_id"),
+        title=request.form.get("title"),
+        message=request.form.get("message"),
+        type=request.form.get("type", "info"),
     )
-    db.session.add(notif)
-    db.session.commit()
+    g.db.add(notif)
+    g.db.commit()
     flash("Notificação enviada!", "success")
     return redirect(request.referrer or url_for("admin.dashboard"))
 
@@ -590,33 +553,36 @@ def secrets_token():
 @login_required
 @admin_required
 def new_appointment():
-    professionals = Professional.query.filter_by(is_active=True).order_by(Professional.id).all()
-    tid = _tid()
-    patients_q = User.query.filter_by(role="patient", is_active=True)
-    if tid:
-        patients_q = patients_q.filter_by(tenant_id=tid)
-    patients = patients_q.order_by(User.name).all()
-    plans = HealthPlan.query.filter_by(is_active=True).order_by(HealthPlan.name).all()
+    professionals = (g.db.query(Professional)
+                     .filter_by(is_active=True)
+                     .order_by(Professional.id)
+                     .all())
+    patients = (g.db.query(User)
+                .filter_by(role="patient", is_active=True)
+                .order_by(User.name)
+                .all())
+    plans = g.db.query(HealthPlan).filter_by(is_active=True).order_by(HealthPlan.name).all()
 
     if request.method == "POST":
-        patient_id    = request.form.get("patient_id")
-        prof_id       = request.form.get("professional_id")
-        date_str      = request.form.get("date")
-        time_str      = request.form.get("time")
-        appt_type     = request.form.get("type", "Consulta")
-        payment_type  = request.form.get("payment_type", "particular")
-        plan_id       = request.form.get("plan_id") or None
-        notes         = request.form.get("notes", "").strip()
-        internal_notes= request.form.get("internal_notes", "").strip()
-        price_raw     = request.form.get("price", "").strip()
-        status        = request.form.get("status", "scheduled")
+        patient_id     = request.form.get("patient_id")
+        prof_id        = request.form.get("professional_id")
+        date_str       = request.form.get("date")
+        time_str       = request.form.get("time")
+        appt_type      = request.form.get("type", "Consulta")
+        payment_type   = request.form.get("payment_type", "particular")
+        plan_id        = request.form.get("plan_id") or None
+        notes          = request.form.get("notes", "").strip()
+        internal_notes = request.form.get("internal_notes", "").strip()
+        price_raw      = request.form.get("price", "").strip()
+        status         = request.form.get("status", "scheduled")
 
         errors = []
-        if not patient_id:    errors.append("Selecione um paciente.")
-        if not prof_id:       errors.append("Selecione um profissional.")
-        if not date_str:      errors.append("Informe a data.")
-        if not time_str:      errors.append("Informe o horário.")
+        if not patient_id: errors.append("Selecione um paciente.")
+        if not prof_id:    errors.append("Selecione um profissional.")
+        if not date_str:   errors.append("Informe a data.")
+        if not time_str:   errors.append("Informe o horário.")
 
+        appt_date = None
         if not errors:
             try:
                 appt_date = datetime.strptime(date_str, "%Y-%m-%d").date()
@@ -630,13 +596,12 @@ def new_appointment():
                                    professionals=professionals, patients=patients,
                                    plans=plans)
 
-        # Preço: usa o digitado, ou valor padrão do plano
         try:
             price = float(price_raw) if price_raw else 0.0
         except ValueError:
             price = 0.0
         if price == 0.0 and payment_type == "convenio" and plan_id:
-            p = HealthPlan.query.get(plan_id)
+            p = g.db.query(HealthPlan).get(int(plan_id))
             if p:
                 price = p.consultation_value
 
@@ -654,8 +619,8 @@ def new_appointment():
             internal_notes=internal_notes,
             price=price,
         )
-        db.session.add(appt)
-        db.session.flush()
+        g.db.add(appt)
+        g.db.flush()
 
         history = AppointmentHistory(
             appointment_id=appt.id,
@@ -665,7 +630,7 @@ def new_appointment():
             new_time=time_str,
             new_status=status,
         )
-        db.session.add(history)
+        g.db.add(history)
 
         notif = Notification(
             user_id=int(patient_id),
@@ -674,14 +639,13 @@ def new_appointment():
             type="appointment",
             appointment_id=appt.id,
         )
-        db.session.add(notif)
-        db.session.commit()
+        g.db.add(notif)
+        g.db.commit()
         log_action("create_appointment", "appointment", appt.id,
                    f"Admin agendou para paciente {patient_id}")
         flash("Consulta agendada com sucesso!", "success")
         return redirect(url_for("admin.schedule", date=date_str))
 
-    # pré-preenche data se vier da agenda
     prefill_date = request.args.get("date", date.today().isoformat())
     prefill_time = request.args.get("time", "")
     prefill_prof = request.args.get("professional_id", "")
@@ -697,7 +661,7 @@ def new_appointment():
 @login_required
 @admin_required
 def health_plans():
-    plans = HealthPlan.query.order_by(HealthPlan.name).all()
+    plans = g.db.query(HealthPlan).order_by(HealthPlan.name).all()
     return render_template("admin/health_plans.html", plans=plans)
 
 
@@ -719,8 +683,8 @@ def new_health_plan():
             notes=request.form.get("notes", "").strip(),
             is_active=True,
         )
-        db.session.add(plan)
-        db.session.commit()
+        g.db.add(plan)
+        g.db.commit()
         log_action("create_health_plan", "health_plan", plan.id, plan.name)
         flash(f"Plano '{plan.name}' cadastrado!", "success")
         return redirect(url_for("admin.health_plans"))
@@ -731,14 +695,14 @@ def new_health_plan():
 @login_required
 @admin_required
 def edit_health_plan(plan_id):
-    plan = HealthPlan.query.get_or_404(plan_id)
+    plan = _get_or_404(HealthPlan, plan_id)
     if request.method == "POST":
-        plan.name = request.form.get("name", plan.name).strip()
-        plan.operator = request.form.get("operator", "").strip()
-        plan.ans_code = request.form.get("ans_code", "").strip()
+        plan.name               = request.form.get("name", plan.name).strip()
+        plan.operator           = request.form.get("operator", "").strip()
+        plan.ans_code           = request.form.get("ans_code", "").strip()
         plan.consultation_value = float(request.form.get("consultation_value") or 0)
-        plan.notes = request.form.get("notes", "").strip()
-        db.session.commit()
+        plan.notes              = request.form.get("notes", "").strip()
+        g.db.commit()
         flash("Plano atualizado!", "success")
         return redirect(url_for("admin.health_plans"))
     return render_template("admin/health_plan_form.html", plan=plan)
@@ -748,9 +712,9 @@ def edit_health_plan(plan_id):
 @login_required
 @admin_required
 def toggle_health_plan(plan_id):
-    plan = HealthPlan.query.get_or_404(plan_id)
+    plan = _get_or_404(HealthPlan, plan_id)
     plan.is_active = not plan.is_active
-    db.session.commit()
+    g.db.commit()
     status = "ativado" if plan.is_active else "desativado"
     flash(f"Plano '{plan.name}' {status}.", "success")
     return redirect(url_for("admin.health_plans"))
@@ -763,10 +727,10 @@ def toggle_health_plan(plan_id):
 @admin_required
 def insurance_guides():
     status_filter = request.args.get("status", "all")
-    plan_filter = request.args.get("plan_id", "all")
-    page = request.args.get("page", 1, type=int)
+    plan_filter   = request.args.get("plan_id", "all")
+    page          = request.args.get("page", 1, type=int)
 
-    query = InsuranceGuide.query
+    query = g.db.query(InsuranceGuide)
     if status_filter != "all":
         query = query.filter_by(status=status_filter)
     if plan_filter != "all":
@@ -775,8 +739,8 @@ def insurance_guides():
         except ValueError:
             pass
 
-    guides = query.order_by(InsuranceGuide.created_at.desc()).paginate(page=page, per_page=25)
-    plans = HealthPlan.query.filter_by(is_active=True).order_by(HealthPlan.name).all()
+    guides = _paginate(query.order_by(InsuranceGuide.created_at.desc()), page, 25)
+    plans  = g.db.query(HealthPlan).filter_by(is_active=True).order_by(HealthPlan.name).all()
     return render_template("admin/insurance_guides.html",
                            guides=guides, plans=plans,
                            status_filter=status_filter, plan_filter=plan_filter)
@@ -786,24 +750,23 @@ def insurance_guides():
 @login_required
 @admin_required
 def new_insurance_guide():
-    plans = HealthPlan.query.filter_by(is_active=True).order_by(HealthPlan.name).all()
-    tid = _tid()
-    patients_q = User.query.filter_by(role="patient", is_active=True)
-    if tid:
-        patients_q = patients_q.filter_by(tenant_id=tid)
-    patients = patients_q.order_by(User.name).all()
+    plans    = g.db.query(HealthPlan).filter_by(is_active=True).order_by(HealthPlan.name).all()
+    patients = (g.db.query(User)
+                .filter_by(role="patient", is_active=True)
+                .order_by(User.name)
+                .all())
 
     if request.method == "POST":
         patient_id = request.form.get("patient_id")
-        plan_id = request.form.get("plan_id")
+        plan_id    = request.form.get("plan_id")
         if not patient_id or not plan_id:
             flash("Paciente e plano são obrigatórios.", "danger")
             return render_template("admin/insurance_guide_form.html",
                                    plans=plans, patients=patients, guide=None)
 
-        appt_id = request.form.get("appointment_id") or None
+        appt_id    = request.form.get("appointment_id") or None
         expiry_str = request.form.get("expiry_date", "")
-        expiry = datetime.strptime(expiry_str, "%Y-%m-%d").date() if expiry_str else None
+        expiry     = datetime.strptime(expiry_str, "%Y-%m-%d").date() if expiry_str else None
 
         guide = InsuranceGuide(
             patient_id=int(patient_id),
@@ -820,8 +783,8 @@ def new_insurance_guide():
             expiry_date=expiry,
             notes=request.form.get("notes", "").strip(),
         )
-        db.session.add(guide)
-        db.session.commit()
+        g.db.add(guide)
+        g.db.commit()
         log_action("create_guide", "insurance_guide", guide.id)
         flash("Guia cadastrada com sucesso!", "success")
         return redirect(url_for("admin.insurance_guides"))
@@ -836,28 +799,27 @@ def new_insurance_guide():
 @login_required
 @admin_required
 def edit_insurance_guide(guide_id):
-    guide = InsuranceGuide.query.get_or_404(guide_id)
-    plans = HealthPlan.query.filter_by(is_active=True).order_by(HealthPlan.name).all()
-    tid = _tid()
-    patients_q = User.query.filter_by(role="patient", is_active=True)
-    if tid:
-        patients_q = patients_q.filter_by(tenant_id=tid)
-    patients = patients_q.order_by(User.name).all()
+    guide    = _get_or_404(InsuranceGuide, guide_id)
+    plans    = g.db.query(HealthPlan).filter_by(is_active=True).order_by(HealthPlan.name).all()
+    patients = (g.db.query(User)
+                .filter_by(role="patient", is_active=True)
+                .order_by(User.name)
+                .all())
 
     if request.method == "POST":
-        guide.guide_number = request.form.get("guide_number", "").strip()
+        guide.guide_number       = request.form.get("guide_number", "").strip()
         guide.authorization_code = request.form.get("authorization_code", "").strip()
-        guide.procedure_code = request.form.get("procedure_code", "").strip()
-        guide.procedure_name = request.form.get("procedure_name", "").strip()
-        guide.requested_value = float(request.form.get("requested_value") or 0)
-        guide.authorized_value = float(request.form.get("authorized_value") or 0)
-        guide.paid_value = float(request.form.get("paid_value") or 0)
-        guide.status = request.form.get("status", guide.status)
-        guide.plan_id = int(request.form.get("plan_id", guide.plan_id))
-        expiry_str = request.form.get("expiry_date", "")
-        guide.expiry_date = datetime.strptime(expiry_str, "%Y-%m-%d").date() if expiry_str else None
-        guide.notes = request.form.get("notes", "").strip()
-        db.session.commit()
+        guide.procedure_code     = request.form.get("procedure_code", "").strip()
+        guide.procedure_name     = request.form.get("procedure_name", "").strip()
+        guide.requested_value    = float(request.form.get("requested_value") or 0)
+        guide.authorized_value   = float(request.form.get("authorized_value") or 0)
+        guide.paid_value         = float(request.form.get("paid_value") or 0)
+        guide.status             = request.form.get("status", guide.status)
+        guide.plan_id            = int(request.form.get("plan_id", guide.plan_id))
+        expiry_str               = request.form.get("expiry_date", "")
+        guide.expiry_date        = datetime.strptime(expiry_str, "%Y-%m-%d").date() if expiry_str else None
+        guide.notes              = request.form.get("notes", "").strip()
+        g.db.commit()
         flash("Guia atualizada!", "success")
         return redirect(url_for("admin.insurance_guides"))
 
@@ -872,12 +834,11 @@ def edit_insurance_guide(guide_id):
 @admin_required
 def settings():
     from database.models import TenantSettings
-    tenant_id = _tid()
-    s = TenantSettings.query.filter_by(tenant_id=tenant_id).first()
-    if not s and tenant_id:
-        s = TenantSettings(tenant_id=tenant_id)
-        db.session.add(s)
-        db.session.commit()
+    s = g.db.query(TenantSettings).first()
+    if not s and g.tenant_id:
+        s = TenantSettings(tenant_id=g.tenant_id)
+        g.db.add(s)
+        g.db.commit()
 
     if request.method == "POST":
         if not s:
@@ -890,7 +851,7 @@ def settings():
         for field in fields:
             val = request.form.get(field, "").strip() or None
             setattr(s, field, val)
-        db.session.commit()
+        g.db.commit()
         log_action("update_settings", "tenant_settings", s.id)
         flash("Configurações salvas!", "success")
         return redirect(url_for("admin.settings"))
@@ -914,16 +875,15 @@ def upload_logo():
 
     logos_dir = os.path.join(current_app.config["UPLOAD_FOLDER"], "logos")
     os.makedirs(logos_dir, exist_ok=True)
-    ext = file.filename.rsplit(".", 1)[-1].lower()
+    ext      = file.filename.rsplit(".", 1)[-1].lower()
     filename = f"logo_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}.{ext}"
     file.save(os.path.join(logos_dir, filename))
     logo_url = f"/uploads/logos/{filename}"
 
-    tenant_id = _tid()
-    s = TenantSettings.query.filter_by(tenant_id=tenant_id).first()
+    s = g.db.query(TenantSettings).first()
     if s:
         s.logo_url = logo_url
-        db.session.commit()
+        g.db.commit()
         log_action("upload_logo", "tenant_settings", s.id, logo_url)
         flash("Logo atualizada!", "success")
     return redirect(url_for("admin.settings"))

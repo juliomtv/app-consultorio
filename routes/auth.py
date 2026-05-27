@@ -1,8 +1,7 @@
 import secrets
 from datetime import datetime, timedelta
-from flask import Blueprint, render_template, redirect, url_for, flash, request, session
+from flask import Blueprint, render_template, redirect, url_for, flash, request, session, g
 from flask_login import login_user, logout_user, login_required, current_user
-from database import db
 from database.models import User, SystemLog
 
 auth_bp = Blueprint("auth", __name__)
@@ -19,8 +18,8 @@ def log_action(action, user_id=None, details=None, status="success"):
         user_agent=request.headers.get("User-Agent", "")[:255],
         status=status,
     )
-    db.session.add(log)
-    db.session.commit()
+    g.db.add(log)
+    g.db.commit()
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -29,14 +28,15 @@ def login():
         return _redirect_by_role(current_user)
 
     if request.method == "POST":
-        email = request.form.get("email", "").strip().lower()
+        email    = request.form.get("email", "").strip().lower()
         password = request.form.get("password", "")
         remember = bool(request.form.get("remember"))
 
-        user = User.query.filter_by(email=email).first()
+        user = g.db.query(User).filter_by(email=email).first() if g.db else None
 
         if not user or not user.check_password(password):
-            log_action("login_failed", details=f"Email: {email}", status="error")
+            if g.db:
+                log_action("login_failed", details=f"Email: {email}", status="error")
             flash("E-mail ou senha incorretos.", "danger")
             return render_template("auth/login.html")
 
@@ -50,10 +50,12 @@ def login():
 
         login_user(user, remember=remember)
         user.last_login = datetime.utcnow()
-        db.session.commit()
-        # Grava o tenant do usuário na sessão para resolução correta em dev (localhost)
-        if user.tenant_id:
-            session['tenant_id'] = user.tenant_id
+        g.db.commit()
+
+        # Store slug in session so dev/localhost requests resolve correctly
+        if g.tenant_slug:
+            session['tenant_slug'] = g.tenant_slug
+
         log_action("login_success", user_id=user.id, details=f"Login de {user.name}")
 
         next_page = request.args.get("next")
@@ -68,32 +70,29 @@ def login():
 def forgot_password():
     if request.method == "POST":
         email = request.form.get("email", "").strip().lower()
-        user = User.query.filter_by(email=email).first()
+        user  = g.db.query(User).filter_by(email=email).first() if g.db else None
 
-        # Sempre mostra a mesma msg para não revelar se email existe
         flash("Se o e-mail existir, você receberá instruções de recuperação.", "info")
 
         if user:
             token = secrets.token_urlsafe(32)
-            user.reset_token = token
+            user.reset_token        = token
             user.reset_token_expiry = datetime.utcnow() + timedelta(hours=2)
-            db.session.commit()
-            # Em produção: enviar e-mail com link de reset
-            # send_reset_email(user, token)
+            g.db.commit()
 
     return render_template("auth/forgot_password.html")
 
 
 @auth_bp.route("/redefinir-senha/<token>", methods=["GET", "POST"])
 def reset_password(token):
-    user = User.query.filter_by(reset_token=token).first()
+    user = g.db.query(User).filter_by(reset_token=token).first() if g.db else None
     if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
         flash("Link inválido ou expirado. Solicite novamente.", "danger")
         return redirect(url_for("auth.forgot_password"))
 
     if request.method == "POST":
         password = request.form.get("password", "")
-        confirm = request.form.get("confirm_password", "")
+        confirm  = request.form.get("confirm_password", "")
         if len(password) < 8:
             flash("Senha deve ter pelo menos 8 caracteres.", "danger")
             return render_template("auth/reset_password.html", token=token)
@@ -102,9 +101,9 @@ def reset_password(token):
             return render_template("auth/reset_password.html", token=token)
 
         user.set_password(password)
-        user.reset_token = None
+        user.reset_token        = None
         user.reset_token_expiry = None
-        db.session.commit()
+        g.db.commit()
         flash("Senha redefinida com sucesso! Faça login.", "success")
         return redirect(url_for("auth.login"))
 
@@ -116,7 +115,7 @@ def reset_password(token):
 def logout():
     log_action("logout", user_id=current_user.id)
     logout_user()
-    session.pop('tenant_id', None)
+    session.pop('tenant_slug', None)
     flash("Você saiu do sistema.", "info")
     return redirect(url_for("auth.login"))
 

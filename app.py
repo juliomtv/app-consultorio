@@ -14,6 +14,11 @@ def create_app(config_class=None):
     os.makedirs(app.config['UPLOAD_FOLDER'],    exist_ok=True)
     os.makedirs(app.config['DOCUMENTS_FOLDER'], exist_ok=True)
     os.makedirs(app.config['LIBRARY_FOLDER'],   exist_ok=True)
+    os.makedirs(app.config['DATA_DIR'],          exist_ok=True)
+
+    # Tenant middleware must run before Flask-Login so g.db is ready for user_loader
+    from middleware.tenant import init_tenant_middleware
+    init_tenant_middleware(app)
 
     init_extensions(app)
 
@@ -27,10 +32,6 @@ def create_app(config_class=None):
     app.register_blueprint(admin_bp,     url_prefix='/admin')
     app.register_blueprint(api_bp,       url_prefix='/api/v1')
     app.register_blueprint(internal_bp,  url_prefix='/api/v1/internal')
-
-    # ── Tenant middleware ────────────────────────────────────────
-    from middleware.tenant import init_tenant_middleware
-    init_tenant_middleware(app)
 
     # ── Context processor (white-label) ─────────────────────────
     from core.context_processor import inject_tenant_settings
@@ -62,82 +63,56 @@ def create_app(config_class=None):
         return render_template('errors/404.html'), 403
 
     with app.app_context():
-        db.create_all()
-        _migrate_columns(app)
         _seed_defaults(app)
 
     return app
 
 
-def _migrate_columns(app):
-    """Adds new columns to existing tables (SQLite ALTER workaround)."""
-    from sqlalchemy import text
-    new_cols = [
-        ('appointments', 'payment_type',   "VARCHAR(20) DEFAULT 'particular'"),
-        ('appointments', 'plan_id',        'INTEGER REFERENCES health_plans(id)'),
-        ('users',        'tenant_id',      'INTEGER'),
-        ('users',        'is_demo',        'BOOLEAN NOT NULL DEFAULT 0'),
-        ('tenants',      'demo_expires_at','DATETIME'),
-    ]
-    with db.engine.connect() as conn:
-        for table, col, definition in new_cols:
-            try:
-                conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {col} {definition}'))
-                conn.commit()
-            except Exception:
-                pass  # column already exists
-
-
 def _seed_defaults(app):
-    """Seeds the default tenant and admin on first run."""
+    """Seeds the default tenant DB on first run."""
+    from database.tenant_db import open_session, db_exists
     from database.models import User, Tenant, TenantSettings
 
-    # 1. Default tenant
-    tenant = Tenant.query.filter_by(slug=app.config['DEFAULT_TENANT_SLUG']).first()
-    if not tenant:
+    slug = app.config.get('DEFAULT_TENANT_SLUG', 'demo')
+    if db_exists(slug):
+        return
+
+    sess = open_session(slug)
+    try:
         tenant = Tenant(
-            name=app.config['DEFAULT_TENANT_NAME'],
-            slug=app.config['DEFAULT_TENANT_SLUG'],
+            name=app.config.get('DEFAULT_TENANT_NAME', 'Demo Clínica'),
+            slug=slug,
             plan='enterprise',
             active_modules='clinica',
             is_active=True,
         )
-        db.session.add(tenant)
-        db.session.flush()
+        sess.add(tenant)
+        sess.flush()
 
         settings = TenantSettings(
             tenant_id=tenant.id,
-            company_name=app.config['DEFAULT_TENANT_NAME'],
+            company_name=app.config.get('DEFAULT_TENANT_NAME', 'Demo Clínica'),
         )
-        db.session.add(settings)
-        db.session.commit()
-        print(f'[SEED] Tenant criado: {tenant.slug}')
+        sess.add(settings)
 
-    # 2. Assign orphan users to default tenant
-    from sqlalchemy import text
-    with db.engine.connect() as conn:
-        conn.execute(text(
-            f"UPDATE users SET tenant_id = {tenant.id} WHERE tenant_id IS NULL"
-        ))
-        conn.commit()
+        admin_email = app.config.get('ADMIN_EMAIL', 'admin@consultorio.com')
+        admin = User(
+            name='Administrador',
+            email=admin_email,
+            role='admin',
+            is_active=True,
+            tenant_id=tenant.id,
+        )
+        admin.set_password(app.config.get('ADMIN_PASSWORD', 'Admin@2024!'))
+        sess.add(admin)
 
-    # 3. Tenant admin
-    admin_email = app.config['ADMIN_EMAIL']
-    if not User.query.filter_by(email=admin_email).first():
-        try:
-            admin = User(
-                name='Administrador',
-                email=admin_email,
-                role='admin',
-                is_active=True,
-                tenant_id=tenant.id,
-            )
-            admin.set_password(app.config['ADMIN_PASSWORD'])
-            db.session.add(admin)
-            db.session.commit()
-            print(f'[SEED] Admin criado: {admin_email}')
-        except Exception:
-            db.session.rollback()
+        sess.commit()
+        print(f'[SEED] Tenant padrão criado: {slug}')
+    except Exception as e:
+        sess.rollback()
+        print(f'[SEED] Erro ao criar tenant padrão: {e}')
+    finally:
+        sess.close()
 
 
 if __name__ == '__main__':

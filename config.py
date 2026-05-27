@@ -32,6 +32,8 @@ class Config:
     ADMIN_EMAIL         = os.environ.get('ADMIN_EMAIL',  'admin@consultorio.com')
     ADMIN_PASSWORD      = os.environ.get('ADMIN_PASSWORD', 'Admin@2024!')
 
+    DATA_DIR          = os.path.join(BASE_DIR, 'data')
+
     SAAS_DOMAIN       = os.environ.get('SAAS_DOMAIN', 'localhost')
     INTERNAL_API_KEY  = os.environ.get('INTERNAL_API_KEY', 'internal-dev-key-change-in-prod')
 

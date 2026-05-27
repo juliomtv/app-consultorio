@@ -3,7 +3,7 @@ Rotas internas — chamadas pelo app-saas para provisionar tenants.
 Autenticação: header X-Internal-Key deve coincidir com INTERNAL_API_KEY do config.
 """
 from flask import Blueprint, jsonify, request, current_app
-from database import db
+from database.tenant_db import open_session
 from database.models import Tenant, TenantSettings, User
 
 internal_bp = Blueprint('internal', __name__)
@@ -46,54 +46,55 @@ def provision():
     if not slug or not admin_email or not admin_password:
         return _resp(error='slug, admin_email e admin_password são obrigatórios', status=400)
 
+    sess = open_session(slug)
     try:
-        # Tenant — cria ou atualiza
-        tenant = Tenant.query.filter_by(slug=slug).first()
+        # Tenant
+        tenant = sess.query(Tenant).first()
         if not tenant:
             tenant = Tenant(slug=slug)
-            db.session.add(tenant)
+            sess.add(tenant)
         tenant.name           = name
         tenant.plan           = plan
         tenant.custom_domain  = custom_domain
         tenant.active_modules = modules
         tenant.is_active      = True
-        db.session.flush()
+        sess.flush()
 
         # TenantSettings
-        s = TenantSettings.query.filter_by(tenant_id=tenant.id).first()
+        s = sess.query(TenantSettings).filter_by(tenant_id=tenant.id).first()
         if not s:
             s = TenantSettings(tenant_id=tenant.id)
-            db.session.add(s)
+            sess.add(s)
         s.company_name = settings_data.get('company_name', name)
         for key in _SETTINGS_KEYS:
             if key in settings_data and key != 'company_name':
                 setattr(s, key, settings_data[key] or None)
 
-        # Admin user — busca pelo tenant primeiro, depois pelo e-mail
-        admin = User.query.filter_by(email=admin_email, tenant_id=tenant.id).first()
+        # Admin user
+        admin = sess.query(User).filter_by(email=admin_email).first()
         if not admin:
-            other = User.query.filter_by(email=admin_email).first()
-            effective_email = f"{admin_email}+{tenant.slug}" if other else admin_email
             admin = User(
                 name='Administrador',
-                email=effective_email,
+                email=admin_email,
                 role='admin',
                 is_active=True,
                 tenant_id=tenant.id,
             )
             admin.set_password(admin_password)
-            db.session.add(admin)
+            sess.add(admin)
         else:
             admin.set_password(admin_password)
             admin.role      = 'admin'
             admin.is_active = True
 
-        db.session.commit()
+        sess.commit()
         return _resp({'tenant_id': tenant.id, 'slug': tenant.slug})
     except Exception as e:
-        db.session.rollback()
+        sess.rollback()
         current_app.logger.error(f'[PROVISION] {e}')
         return _resp(error=str(e), status=500)
+    finally:
+        sess.close()
 
 
 @internal_bp.route('/tenant/<slug>/settings', methods=['PUT'])
@@ -102,20 +103,27 @@ def update_settings(slug):
     if not _auth():
         return _resp(error='Não autorizado', status=401)
 
-    tenant = Tenant.query.filter_by(slug=slug).first()
-    if not tenant:
-        return _resp(error='Tenant não encontrado', status=404)
+    sess = open_session(slug)
+    try:
+        tenant = sess.query(Tenant).first()
+        if not tenant:
+            return _resp(error='Tenant não encontrado', status=404)
 
-    body = request.get_json(silent=True) or {}
-    s = TenantSettings.query.filter_by(tenant_id=tenant.id).first()
-    if not s:
-        s = TenantSettings(tenant_id=tenant.id)
-        db.session.add(s)
-    for key in _SETTINGS_KEYS:
-        if key in body:
-            setattr(s, key, body[key] or None)
-    db.session.commit()
-    return _resp()
+        body = request.get_json(silent=True) or {}
+        s = sess.query(TenantSettings).filter_by(tenant_id=tenant.id).first()
+        if not s:
+            s = TenantSettings(tenant_id=tenant.id)
+            sess.add(s)
+        for key in _SETTINGS_KEYS:
+            if key in body:
+                setattr(s, key, body[key] or None)
+        sess.commit()
+        return _resp()
+    except Exception as e:
+        sess.rollback()
+        return _resp(error=str(e), status=500)
+    finally:
+        sess.close()
 
 
 @internal_bp.route('/tenant/<slug>/status', methods=['PUT'])
@@ -124,14 +132,21 @@ def set_status(slug):
     if not _auth():
         return _resp(error='Não autorizado', status=401)
 
-    tenant = Tenant.query.filter_by(slug=slug).first()
-    if not tenant:
-        return _resp(error='Tenant não encontrado', status=404)
+    sess = open_session(slug)
+    try:
+        tenant = sess.query(Tenant).first()
+        if not tenant:
+            return _resp(error='Tenant não encontrado', status=404)
 
-    body = request.get_json(silent=True) or {}
-    tenant.is_active = bool(body.get('is_active', True))
-    db.session.commit()
-    return _resp()
+        body = request.get_json(silent=True) or {}
+        tenant.is_active = bool(body.get('is_active', True))
+        sess.commit()
+        return _resp()
+    except Exception as e:
+        sess.rollback()
+        return _resp(error=str(e), status=500)
+    finally:
+        sess.close()
 
 
 @internal_bp.route('/tenant/<slug>/demo', methods=['POST'])
@@ -140,35 +155,44 @@ def set_demo(slug):
     if not _auth():
         return _resp(error='Não autorizado', status=401)
 
-    tenant = Tenant.query.filter_by(slug=slug).first()
-    if not tenant:
-        return _resp(error='Tenant não encontrado', status=404)
+    sess = open_session(slug)
+    try:
+        tenant = sess.query(Tenant).first()
+        if not tenant:
+            return _resp(error='Tenant não encontrado', status=404)
 
-    body          = request.get_json(silent=True) or {}
-    demo_email    = body.get('demo_email', '').strip()
-    demo_password = body.get('demo_password', '')
-    expires_raw   = body.get('demo_expires_at')
+        body          = request.get_json(silent=True) or {}
+        demo_email    = body.get('demo_email', '').strip()
+        demo_password = body.get('demo_password', '')
+        expires_raw   = body.get('demo_expires_at')
 
-    if expires_raw:
-        from datetime import datetime as _dt
-        try:
-            tenant.demo_expires_at = _dt.fromisoformat(expires_raw.replace('Z', '+00:00').replace('+00:00', ''))
-        except Exception:
-            pass
+        if expires_raw:
+            from datetime import datetime as _dt
+            try:
+                tenant.demo_expires_at = _dt.fromisoformat(
+                    expires_raw.replace('Z', '+00:00').replace('+00:00', '')
+                )
+            except Exception:
+                pass
 
-    demo_user = User.query.filter_by(email=demo_email, tenant_id=tenant.id).first()
-    if not demo_user:
-        demo_user = User(name='Demo', email=demo_email, role='admin',
-                        is_active=True, is_demo=True, tenant_id=tenant.id)
-        db.session.add(demo_user)
-    else:
-        demo_user.is_active = True
-        demo_user.is_demo   = True
-        demo_user.role      = 'admin'
+        demo_user = sess.query(User).filter_by(email=demo_email).first()
+        if not demo_user:
+            demo_user = User(name='Demo', email=demo_email, role='admin',
+                             is_active=True, is_demo=True, tenant_id=tenant.id)
+            sess.add(demo_user)
+        else:
+            demo_user.is_active = True
+            demo_user.is_demo   = True
+            demo_user.role      = 'admin'
 
-    demo_user.set_password(demo_password)
-    db.session.commit()
-    return _resp()
+        demo_user.set_password(demo_password)
+        sess.commit()
+        return _resp()
+    except Exception as e:
+        sess.rollback()
+        return _resp(error=str(e), status=500)
+    finally:
+        sess.close()
 
 
 @internal_bp.route('/tenant/<slug>/seed', methods=['POST'])
@@ -177,98 +201,98 @@ def seed_demo(slug):
     if not _auth():
         return _resp(error='Não autorizado', status=401)
 
-    tenant = Tenant.query.filter_by(slug=slug).first()
-    if not tenant:
-        return _resp(error='Tenant não encontrado', status=404)
-
+    sess = open_session(slug)
     try:
-        _seed_tenant(tenant)
+        tenant = sess.query(Tenant).first()
+        if not tenant:
+            return _resp(error='Tenant não encontrado', status=404)
+        _seed_tenant(sess, tenant)
         return _resp({'message': 'Seeded successfully'})
     except Exception as e:
+        sess.rollback()
         current_app.logger.error(f'[SEED] {e}')
         return _resp(error=str(e), status=500)
+    finally:
+        sess.close()
 
 
-def _seed_tenant(tenant):
+def _seed_tenant(sess, tenant):
     from datetime import date, timedelta
     from database.models import Professional, Appointment, HealthPlan, Schedule
 
     tid = tenant.id
 
-    # ── Limpar dados do tenant (exceto admins) ────────────────────
-    # Appointments first (FK constraints)
-    patient_ids = [u.id for u in User.query.filter_by(tenant_id=tid, role='patient').all()]
-    if patient_ids:
-        Appointment.query.filter(Appointment.patient_id.in_(patient_ids)).delete(synchronize_session=False)
-    prof_user_ids = [u.id for u in User.query.filter_by(tenant_id=tid, role='professional').all()]
-    for pu_id in prof_user_ids:
-        prof = Professional.query.filter_by(user_id=pu_id).first()
-        if prof:
-            Schedule.query.filter_by(professional_id=prof.id).delete()
-            db.session.delete(prof)
-    User.query.filter_by(tenant_id=tid, role='patient').delete()
-    User.query.filter_by(tenant_id=tid, role='professional').delete()
-    db.session.flush()
+    # ── Limpar dados existentes (exceto admins) ──────────────────────────────
+    for appt in sess.query(Appointment).all():
+        sess.delete(appt)
+    for prof in sess.query(Professional).all():
+        for sch in sess.query(Schedule).filter_by(professional_id=prof.id).all():
+            sess.delete(sch)
+        sess.delete(prof)
+    for u in sess.query(User).filter(User.role.in_(['patient', 'professional'])).all():
+        sess.delete(u)
+    for hp in sess.query(HealthPlan).all():
+        sess.delete(hp)
+    sess.flush()
 
-    # ── Planos de saúde ───────────────────────────────────────────
+    # ── Planos de saúde ──────────────────────────────────────────────────────
     plans = []
     for name, op, val in [
-        ('Unimed Demo',    'Unimed',    180.0),
-        ('Bradesco Saúde', 'Bradesco',  220.0),
+        ('Unimed Demo',    'Unimed',   180.0),
+        ('Bradesco Saúde', 'Bradesco', 220.0),
     ]:
         hp = HealthPlan(name=name, operator=op, consultation_value=val, is_active=True)
-        db.session.add(hp)
+        sess.add(hp)
         plans.append(hp)
-    db.session.flush()
+    sess.flush()
 
-    # ── Profissionais ─────────────────────────────────────────────
+    # ── Profissionais ────────────────────────────────────────────────────────
     prof_data = [
-        ('Dra. Ana Beatriz Santos', 'ana.demo@clinica.br', 'Ginecologia e Obstetrícia', 'CRM 12345', 'CRM'),
-        ('Dr. Carlos Eduardo Lima',  'carlos.demo@clinica.br', 'Clínica Geral',          'CRM 67890', 'CRM'),
+        ('Dra. Ana Beatriz Santos', 'ana.demo@clinica.br',    'Ginecologia e Obstetrícia', 'CRM 12345', 'CRM'),
+        ('Dr. Carlos Eduardo Lima',  'carlos.demo@clinica.br', 'Clínica Geral',             'CRM 67890', 'CRM'),
     ]
     profs = []
     for name, email, spec, council_no, council_type in prof_data:
         u = User(name=name, email=email, role='professional',
                  is_active=True, tenant_id=tid)
         u.set_password('Demo@2026!')
-        db.session.add(u)
-        db.session.flush()
+        sess.add(u)
+        sess.flush()
         p = Professional(user_id=u.id, specialty=spec,
                          council_number=council_no, council_type=council_type,
                          consultation_duration=30, is_active=True)
-        db.session.add(p)
-        db.session.flush()
-        # Agenda seg-sex 08:00-18:00
+        sess.add(p)
+        sess.flush()
         for day in range(5):
-            db.session.add(Schedule(professional_id=p.id, day_of_week=day,
-                                    start_time='08:00', end_time='18:00',
-                                    slot_duration=30, is_active=True))
+            sess.add(Schedule(professional_id=p.id, day_of_week=day,
+                              start_time='08:00', end_time='18:00',
+                              slot_duration=30, is_active=True))
         profs.append(p)
-    db.session.flush()
+    sess.flush()
 
-    # ── Pacientes ─────────────────────────────────────────────────
+    # ── Pacientes ────────────────────────────────────────────────────────────
     PATIENTS = [
-        ('Maria Silva',       'maria.demo@paciente.br',   '(21) 98765-0001'),
-        ('Fernanda Costa',    'fernanda.demo@paciente.br', '(21) 98765-0002'),
-        ('Juliana Oliveira',  'juliana.demo@paciente.br',  '(21) 98765-0003'),
-        ('Camila Rodrigues',  'camila.demo@paciente.br',   '(21) 98765-0004'),
-        ('Patricia Alves',    'patricia.demo@paciente.br', '(21) 98765-0005'),
-        ('Renata Souza',      'renata.demo@paciente.br',   '(21) 98765-0006'),
-        ('Beatriz Lima',      'beatriz.demo@paciente.br',  '(21) 98765-0007'),
-        ('Amanda Santos',     'amanda.demo@paciente.br',   '(21) 98765-0008'),
+        ('Maria Silva',      'maria.demo@paciente.br',    '(21) 98765-0001'),
+        ('Fernanda Costa',   'fernanda.demo@paciente.br', '(21) 98765-0002'),
+        ('Juliana Oliveira', 'juliana.demo@paciente.br',  '(21) 98765-0003'),
+        ('Camila Rodrigues', 'camila.demo@paciente.br',   '(21) 98765-0004'),
+        ('Patricia Alves',   'patricia.demo@paciente.br', '(21) 98765-0005'),
+        ('Renata Souza',     'renata.demo@paciente.br',   '(21) 98765-0006'),
+        ('Beatriz Lima',     'beatriz.demo@paciente.br',  '(21) 98765-0007'),
+        ('Amanda Santos',    'amanda.demo@paciente.br',   '(21) 98765-0008'),
     ]
     patients = []
     for name, email, phone in PATIENTS:
         u = User(name=name, email=email, phone=phone, role='patient',
                  is_active=True, tenant_id=tid)
         u.set_password('Demo@2026!')
-        db.session.add(u)
+        sess.add(u)
         patients.append(u)
-    db.session.flush()
+    sess.flush()
 
-    # ── Consultas ─────────────────────────────────────────────────
-    today = date.today()
-    times = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00']
+    # ── Consultas ────────────────────────────────────────────────────────────
+    today      = date.today()
+    times      = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '14:00', '14:30', '15:00']
     APPT_TYPES = ['Consulta', 'Retorno', 'Consulta', 'Consulta', 'Retorno']
 
     slot = 0
@@ -276,21 +300,17 @@ def _seed_tenant(tenant):
         d = today + timedelta(days=delta)
         if d.weekday() >= 5:
             continue
-        if delta < 0:
-            status = 'completed' if delta % 5 != 0 else 'cancelled'
-        elif delta == 0:
-            status = 'confirmed'
-        else:
-            status = 'scheduled'
+        status = ('completed' if delta % 5 != 0 else 'cancelled') if delta < 0 \
+                 else ('confirmed' if delta == 0 else 'scheduled')
         for _ in range(2):
-            patient  = patients[slot % len(patients)]
-            prof     = profs[slot % len(profs)]
+            patient   = patients[slot % len(patients)]
+            prof      = profs[slot % len(profs)]
             appt_type = APPT_TYPES[slot % len(APPT_TYPES)]
-            t        = times[slot % len(times)]
-            pay_type = 'convenio' if slot % 3 == 0 else 'particular'
-            plan_id  = plans[0].id if pay_type == 'convenio' else None
-            price    = (plans[0].consultation_value if pay_type == 'convenio' else 200.0)
-            db.session.add(Appointment(
+            t         = times[slot % len(times)]
+            pay_type  = 'convenio' if slot % 3 == 0 else 'particular'
+            plan_id   = plans[0].id if pay_type == 'convenio' else None
+            price     = (plans[0].consultation_value if pay_type == 'convenio' else 200.0)
+            sess.add(Appointment(
                 patient_id=patient.id, professional_id=prof.id,
                 date=d, time=t, duration=30,
                 status=status, type=appt_type,
@@ -298,17 +318,18 @@ def _seed_tenant(tenant):
                 price=price, is_paid=(delta < 0),
             ))
             slot += 1
-    db.session.commit()
+    sess.commit()
 
 
 @internal_bp.route('/tenant/<slug>', methods=['DELETE'])
 def deprovision(slug):
-    """Remove tenant e todos os seus dados do app-consultorio."""
+    """Remove o DB do tenant (apaga o arquivo)."""
     if not _auth():
         return _resp(error='Não autorizado', status=401)
 
-    tenant = Tenant.query.filter_by(slug=slug).first()
-    if tenant:
-        db.session.delete(tenant)
-        db.session.commit()
-    return _resp()  # 200 mesmo se não existia (idempotente)
+    from database.tenant_db import remove_db
+    try:
+        remove_db(slug)
+        return _resp()
+    except OSError as e:
+        return _resp(error=str(e), status=500)
