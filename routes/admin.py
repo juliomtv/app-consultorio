@@ -20,6 +20,39 @@ def _tid():
     return getattr(_g, 'tenant_id', None)
 
 
+def _appt_base():
+    """Appointment query scoped to the current tenant."""
+    tid = _tid()
+    if not tid:
+        return Appointment.query
+    prof_sub = db.session.query(Professional.id).join(
+        User, Professional.user_id == User.id
+    ).filter(User.tenant_id == tid)
+    return Appointment.query.filter(Appointment.professional_id.in_(prof_sub))
+
+
+def _profs_q(active_only=True):
+    """Professional query scoped to the current tenant."""
+    tid = _tid()
+    q = Professional.query.join(User, Professional.user_id == User.id)
+    if active_only:
+        q = q.filter(Professional.is_active == True)
+    if tid:
+        q = q.filter(User.tenant_id == tid)
+    return q
+
+
+def _trans_base():
+    """FinancialTransaction query scoped to the current tenant (via created_by user)."""
+    tid = _tid()
+    if not tid:
+        return FinancialTransaction.query
+    user_sub = db.session.query(User.id).filter(User.tenant_id == tid)
+    return FinancialTransaction.query.filter(
+        FinancialTransaction.created_by.in_(user_sub)
+    )
+
+
 def admin_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
@@ -66,22 +99,24 @@ def dashboard():
     if tid:
         base_patient_q = base_patient_q.filter_by(tenant_id=tid)
 
+    appts = _appt_base()
     stats = {
         "total_patients": base_patient_q.count(),
-        "total_appointments": Appointment.query.count(),
-        "today_appointments": Appointment.query.filter_by(date=today).count(),
-        "month_appointments": Appointment.query.filter(Appointment.date >= month_start).count(),
-        "pending_appointments": Appointment.query.filter_by(status="scheduled").count(),
-        "month_revenue": db.session.query(func.sum(FinancialTransaction.amount))
-            .filter(FinancialTransaction.type == "income",
-                    FinancialTransaction.status == "paid",
-                    FinancialTransaction.paid_at >= month_start).scalar() or 0,
+        "total_appointments": appts.count(),
+        "today_appointments": appts.filter_by(date=today).count(),
+        "month_appointments": appts.filter(Appointment.date >= month_start).count(),
+        "pending_appointments": appts.filter_by(status="scheduled").count(),
+        "month_revenue": _trans_base().filter(
+            FinancialTransaction.type == "income",
+            FinancialTransaction.status == "paid",
+            FinancialTransaction.paid_at >= month_start,
+        ).with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
         "new_patients_month": base_patient_q.filter(
             User.created_at >= month_start
         ).count(),
     }
 
-    today_appts = (Appointment.query
+    today_appts = (_appt_base()
                    .filter_by(date=today)
                    .order_by(Appointment.time)
                    .all())
@@ -105,7 +140,7 @@ def _get_monthly_chart_data():
     data = []
     for i in range(6):
         month = (today.replace(day=1) - timedelta(days=i * 30))
-        count = Appointment.query.filter(
+        count = _appt_base().filter(
             extract("month", Appointment.date) == month.month,
             extract("year", Appointment.date) == month.year
         ).count()
@@ -219,7 +254,7 @@ def edit_patient(patient_id):
 @login_required
 @admin_required
 def professionals():
-    profs = Professional.query.join(User).filter(User.is_active == True).all()
+    profs = _profs_q(active_only=False).filter(User.is_active == True).all()
     return render_template("admin/professionals.html", professionals=profs)
 
 
@@ -310,9 +345,9 @@ def schedule():
         selected_date = date.today()
 
     professional_filter = request.args.get("professional_id", "all")
-    professionals = Professional.query.filter_by(is_active=True).all()
+    professionals = _profs_q().all()
 
-    query = Appointment.query.filter_by(date=selected_date)
+    query = _appt_base().filter_by(date=selected_date)
     if professional_filter != "all":
         try:
             query = query.filter_by(professional_id=int(professional_filter))
@@ -343,7 +378,7 @@ def financial():
     type_filter = request.args.get("type", "all")
     month_filter = request.args.get("month", date.today().strftime("%Y-%m"))
 
-    query = FinancialTransaction.query
+    query = _trans_base()
     if type_filter != "all":
         query = query.filter_by(type=type_filter)
 
@@ -359,11 +394,10 @@ def financial():
 
     transactions = query.order_by(FinancialTransaction.created_at.desc()).paginate(page=page, per_page=25)
 
+    base_totals = _trans_base()
     totals = {
-        "income": db.session.query(func.sum(FinancialTransaction.amount))
-            .filter_by(type="income", status="paid").scalar() or 0,
-        "expense": db.session.query(func.sum(FinancialTransaction.amount))
-            .filter_by(type="expense", status="paid").scalar() or 0,
+        "income":  base_totals.filter_by(type="income",  status="paid").with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
+        "expense": base_totals.filter_by(type="expense", status="paid").with_entities(func.sum(FinancialTransaction.amount)).scalar() or 0,
     }
     totals["balance"] = totals["income"] - totals["expense"]
 
