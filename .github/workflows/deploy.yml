@@ -1,4 +1,4 @@
-name: Deploy App Consultorio
+name: Deploy App Consultório
 
 on:
   push:
@@ -21,8 +21,9 @@ jobs:
           ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no root@216.238.113.121 '
             set -e
             cd /opt/app-consultorio
-            git fetch origin master
-            git reset --hard origin/master
+            git reset --hard HEAD
+            git pull origin master
+            mkdir -p data
             systemctl restart app-consultorio
-            echo "âœ“ App Consultorio atualizado"
+            echo "Consultório atualizado"
           '
